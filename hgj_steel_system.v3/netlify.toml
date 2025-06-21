@@ -1,0 +1,115 @@
+# Netlify配置文件 - 钢材采购优化系统 V3.0
+
+[build]
+  # 构建配置
+  command = "npm run build:netlify"
+  functions = "netlify/functions"
+  publish = "client/build"
+  
+  # 环境变量
+  environment = { NODE_VERSION = "18" }
+
+[build.processing]
+  # 跳过图片优化
+  skip_processing = false
+
+[build.processing.css]
+  # CSS处理
+  bundle = true
+  minify = true
+
+[build.processing.js]
+  # JavaScript处理
+  bundle = true
+  minify = true
+
+[build.processing.html]
+  # HTML处理
+  pretty_urls = true
+
+# 函数配置
+[functions]
+  # 函数目录
+  directory = "netlify/functions"
+  
+  # Node.js版本
+  node_bundler = "esbuild"
+
+# 重定向规则
+[[redirects]]
+  # API重定向到函数
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[[redirects]]
+  # SPA路由重定向
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# 头部配置
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # 安全头部
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    
+    # 缓存控制
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    # API头部
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    # HTML缓存
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/static/*"
+  [headers.values]
+    # 静态资源缓存
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# 环境变量
+[context.production.environment]
+  NODE_ENV = "production"
+  REACT_APP_API_URL = "/.netlify/functions"
+  REACT_APP_VERSION = "3.0.0"
+
+[context.deploy-preview.environment]
+  NODE_ENV = "development"
+  REACT_APP_API_URL = "/.netlify/functions"
+  REACT_APP_VERSION = "3.0.0-preview"
+
+[context.branch-deploy.environment]
+  NODE_ENV = "development"
+  REACT_APP_API_URL = "/.netlify/functions"
+  REACT_APP_VERSION = "3.0.0-dev"
+
+# 插件配置
+[[plugins]]
+  package = "@netlify/plugin-lighthouse"
+  
+  [plugins.inputs.thresholds]
+    performance = 0.9
+    accessibility = 0.9
+    best-practices = 0.9
+    seo = 0.9
+
+[[plugins]]
+  package = "netlify-plugin-cypress"
+  
+  [plugins.inputs]
+    enable = false 
