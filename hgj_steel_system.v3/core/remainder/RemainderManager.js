@@ -10,20 +10,24 @@ const { v4: uuidv4 } = require('uuid');
 class RemainderManager {
   constructor(wasteThreshold = null) {
     // 🔧 修复：使用约束配置中心的默认废料阈值，消除硬编码
-    this.wasteThreshold = wasteThreshold || constraintManager.getRemainderConfig().defaultWasteThreshold;
-    this.remainderPools = {}; // 按规格+截面面积组合键分组的余料池
-    this.remainderCounters = {}; // 余料计数器
-    this.usageHistory = {}; // 余料使用历史
+    this.wasteThreshold = wasteThreshold ?? constraintManager.getWasteThreshold();
+    this.remainderPools = {}; // 按组合键管理的余料池
+    this.wasteBin = {};       // 新增：废料仓，用于隔离和管理所有废料对象
+    this.usageHistory = {};   // 记录余料使用历史
+    this.remainderCounters = {}; // 余料编号计数器
+    
+    console.log(`📋 余料管理器初始化完成，废料阈值: ${this.wasteThreshold}mm`);
   }
 
   /**
-   * 初始化组合键余料池
+   * 初始化组合键的余料池、使用历史和废料仓
    */
   initializePool(groupKey) {
     if (!this.remainderPools[groupKey]) {
       this.remainderPools[groupKey] = [];
-      this.remainderCounters[groupKey] = { letterIndex: 0, numbers: {} };
       this.usageHistory[groupKey] = [];
+      this.wasteBin[groupKey] = []; // 关键新增：同时初始化废料仓
+      this.remainderCounters[groupKey] = { letterIndex: 0, numbers: {} };
     }
   }
 
@@ -54,63 +58,50 @@ class RemainderManager {
   }
 
   /**
-   * 🔧 修复：余料评估和处理方法
-   * 关键修复：真余料只能在生产结束后确定，不能在切割过程中提前标记
+   * 🔧 核心修复：重构余料评估和处理方法
+   * 引入"废料仓"机制，实现废料的彻底隔离
    */
   evaluateAndProcessRemainder(remainder, groupKey, context = {}) {
     this.initializePool(groupKey);
-    
-    // 确保余料有正确的ID和组合键信息
+
+    // 确保余料有ID
     if (!remainder.id) {
       remainder.id = this.generateRemainderID(groupKey);
     }
-    if (!remainder.groupKey) {
-      remainder.groupKey = groupKey;
-    }
-    
+    remainder.groupKey = groupKey;
+
     const result = {
-      remainder: remainder,
+      remainder: null, // 默认不返回任何对象
       isWaste: false,
-      isPendingRemainder: false, // 🔧 修复：改为isPendingRemainder
+      isPendingRemainder: false,
       wasteLength: 0,
-      action: '', // 'addToPool', 'markAsWaste', 'ignore'
-      statistics: {
-        wasteGenerated: 0,
-        pendingRemainderGenerated: 0 // 🔧 修复：改为pendingRemainderGenerated
-      }
+      action: '',
     };
-    
-    // 🎯 修复：正确的动态判断逻辑
+
     if (remainder.length < this.wasteThreshold) {
-      // 情况1：长度小于阈值，立即标记为废料
+      // 情况1：是废料，立即隔离到废料仓
       remainder.markAsWaste();
+      this.wasteBin[groupKey].push(remainder);
+
       result.isWaste = true;
       result.wasteLength = remainder.length;
-      result.action = 'markAsWaste';
-      result.statistics.wasteGenerated = remainder.length;
-      
-      console.log(`🗑️ ${groupKey}余料 ${remainder.id} (${remainder.length}mm) 立即判断为废料 [${context.source || '未知来源'}]`);
+      result.action = 'moveToWasteBin'; // 动作更明确
+
+      console.log(`🗑️  ${groupKey}余料 ${remainder.id} (${remainder.length}mm) 小于阈值，立即移入废料仓 [来源: ${context.source || '未知'}]`);
     } else {
-      // 🔧 关键修复：长度大于阈值，保持pending状态，加入池中待后续使用
-      // 注意：不能在这里markAsReal()，因为真余料只能在生产结束后确定
-      remainder.type = REMAINDER_TYPES.PENDING; // 保持pending状态
+      // 情况2：是可用的待定余料，加入正常的余料池
+      remainder.type = REMAINDER_TYPES.PENDING;
       this.remainderPools[groupKey].push(remainder);
-      
-      // 🔧 优化：按长度升序排列，配合二分查找策略
-      this.remainderPools[groupKey].sort((a, b) => a.length - b.length);
-      
+      this.remainderPools[groupKey].sort((a, b) => a.length - b.length); // 保持排序
+
+      result.remainder = remainder; // 只在是可用余料时才返回对象
       result.isPendingRemainder = true;
       result.action = 'addToPool';
-      result.statistics.pendingRemainderGenerated = remainder.length;
-      
-      console.log(`⏳ ${groupKey}余料 ${remainder.id} (${remainder.length}mm) 标记为待定状态并加入池中 [${context.source || '未知来源'}] - 真余料状态将在生产结束后确定`);
+
+      console.log(`⏳  ${groupKey}余料 ${remainder.id} (${remainder.length}mm) 作为待定余料加入池中 [来源: ${context.source || '未知'}]`);
     }
-    
-    // 断言：remainder 不能是废料类型被加入池
-    if (remainder.type === 'waste') {
-      throw new Error('evaluateAndProcessRemainder试图将废料对象加入余料池！');
-    }
-    
+
+    // 新架构下，旧的断言已无必要，因为废料绝不会进入此方法的'else'分支
     return result;
   }
 

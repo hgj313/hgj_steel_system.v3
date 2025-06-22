@@ -121,6 +121,7 @@ class ErrorHandler {
    * 处理和记录错误
    */
   handleError(error, context = {}) {
+    console.error('💥 [ErrorHandler] 捕获到原始异常:', error);
     const errorType = this.classifyError(error);
     const userFriendlyInfo = this.generateUserFriendlyMessage(error, errorType);
     
