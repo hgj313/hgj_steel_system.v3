@@ -4,18 +4,20 @@
  */
 
 const SteelOptimizerV3 = require('../../core/optimizer/SteelOptimizerV3');
+const ErrorHandler = require('../../core/utils/ErrorHandler');
+const constraintManager = require('../../core/config/ConstraintManager');
 const { 
   DesignSteel, 
   ModuleSteel, 
-  OptimizationConstraints,
-  LossRateCalculator 
+  OptimizationConstraints
 } = require('../types');
 
 class OptimizationService {
   constructor() {
     this.activeOptimizers = new Map(); // 存储活跃的优化器实例
     this.optimizationHistory = [];
-    this.lossRateCalculator = new LossRateCalculator();
+    // 🔧 统一架构：损耗率计算已整合到StatisticsCalculator中
+    this.errorHandler = new ErrorHandler(); // 统一错误处理器
   }
 
   /**
@@ -24,21 +26,24 @@ class OptimizationService {
    */
   async optimizeSteel(requestData) {
     try {
-      // 1. 验证和转换输入数据
-      const validationResult = this.validateInput(requestData);
+      // 1. 🔧 使用ErrorHandler进行完善的输入验证
+      const designSteels = this.createDesignSteels(requestData.designSteels || []);
+      const moduleSteels = this.createModuleSteels(requestData.moduleSteels || []);
+      const constraints = this.createConstraints(requestData.constraints);
+
+      const validationResult = this.errorHandler.validateInputData(designSteels, moduleSteels, constraints);
       if (!validationResult.isValid) {
+        console.warn('📋 输入数据验证失败:', validationResult.errors);
         return {
           success: false,
           error: '输入数据验证失败',
+          errorType: 'VALIDATION_ERROR',
           details: validationResult.errors,
-          suggestions: validationResult.suggestions
+          suggestions: this.generateValidationSuggestions(validationResult.errors)
         };
       }
 
-      // 2. 创建数据对象
-      const designSteels = this.createDesignSteels(requestData.designSteels);
-      const moduleSteels = this.createModuleSteels(requestData.moduleSteels);
-      const constraints = this.createConstraints(requestData.constraints);
+      // 2. 数据对象已在验证步骤中创建
 
       // 3. 生成优化ID并创建优化器
       const optimizationId = this.generateOptimizationId();
@@ -61,14 +66,14 @@ class OptimizationService {
         optimizerInfo.result = optimizationOutput; // 保存原始输出
       }
       
-      // 7. 汇总计算最终结果
-      const finalResult = this.aggregateResults(optimizationOutput);
+      // 7. 🔧 修复：直接使用算法层的完整结果，不再重复计算
+      // 移除aggregateResults调用，避免数据不一致
 
       // 8. 记录优化历史
       this.recordOptimizationHistory({
         id: optimizationId,
         input: requestData,
-        result: finalResult, // 记录汇总后的结果
+        result: optimizationOutput.result, // 直接使用算法层结果
         timestamp: new Date().toISOString()
       });
 
@@ -77,15 +82,15 @@ class OptimizationService {
         this.activeOptimizers.delete(optimizationId);
       }, 300000);
 
-      // 10. 构建最终响应
+      // 10. 构建最终响应 - API层只负责格式转换
       const response = {
         success: optimizationOutput.success,
         optimizationId: optimizationId,
-        result: optimizationOutput.success ? finalResult : null,
+        result: optimizationOutput.success ? optimizationOutput.result : null,
         error: optimizationOutput.success ? null : optimizationOutput.error,
         stats: optimizationOutput.stats,
         executionTime: Date.now() - optimizerInfo.startTime,
-        processingStatus: {
+        processingStatus: optimizationOutput.result?.processingStatus || {
           isCompleted: true,
           readyForRendering: true,
           completedAt: new Date().toISOString()
@@ -95,55 +100,86 @@ class OptimizationService {
       return response;
 
     } catch (error) {
-      console.error('优化服务错误:', error);
+      // 🔧 使用ErrorHandler处理异常
+      const errorRecord = this.errorHandler.handleError(error, {
+        operation: 'optimizeSteel',
+        requestData: {
+          designSteelsCount: requestData.designSteels?.length || 0,
+          moduleSteelsCount: requestData.moduleSteels?.length || 0,
+          constraints: requestData.constraints
+        }
+      });
+
       return {
         success: false,
-        error: `优化过程出现异常: ${error.message}`,
+        error: errorRecord.userMessage,
+        errorType: errorRecord.type,
+        suggestions: errorRecord.suggestions,
+        errorId: errorRecord.id,
+        severity: errorRecord.severity,
         stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       };
     }
   }
 
   /**
-   * 新增：汇总优化器结果
-   * 从详细的solutions计算顶层统计数据
+   * 🗑️ 已移除：aggregateResults方法
+   * 原因：避免API层重复计算，确保数据一致性
+   * 现在直接使用算法层(ResultBuilder)的完整计算结果
    */
-  aggregateResults(optimizationOutput) {
-    if (!optimizationOutput.success || !optimizationOutput.result?.solutions) {
-      return null;
+
+  /**
+   * 🔧 新增：生成验证错误的用户友好建议
+   */
+  generateValidationSuggestions(errors) {
+    const suggestions = [];
+    const errorTypes = new Set(errors.map(err => err.code));
+
+    if (errorTypes.has('MISSING_DESIGN_STEELS')) {
+      suggestions.push('请上传包含设计钢材数据的Excel文件');
+    }
+    
+    if (errorTypes.has('MISSING_MODULE_STEELS')) {
+      suggestions.push('请确保添加至少一种模数钢材规格');
+    }
+    
+    if (errorTypes.has('INVALID_LENGTH') || errorTypes.has('INVALID_MODULE_LENGTH')) {
+      suggestions.push('请检查钢材长度是否为正数且单位正确（单位：mm）');
+    }
+    
+    if (errorTypes.has('INVALID_QUANTITY')) {
+      suggestions.push('请确认钢材数量为正整数');
+    }
+    
+    if (errorTypes.has('INVALID_CROSS_SECTION')) {
+      suggestions.push('请检查截面面积数据是否正确（单位：mm²）');
+    }
+    
+    if (errorTypes.has('LENGTH_TOO_LARGE')) {
+      const maxLength = constraintManager.getDataLimits('designSteel').maxLength;
+      suggestions.push(`钢材长度过大，请检查数据单位是否正确（建议最大${maxLength/1000}米）`);
+    }
+    
+    if (errorTypes.has('QUANTITY_TOO_LARGE')) {
+      const maxQuantity = constraintManager.getDataLimits('designSteel').maxQuantity;
+      suggestions.push(`钢材数量过多，建议分批次进行优化（单次建议不超过${maxQuantity}根）`);
+    }
+    
+    if (errorTypes.has('INVALID_WASTE_THRESHOLD')) {
+      const limits = constraintManager.getValidationLimits('wasteThreshold');
+      suggestions.push(`废料阈值建议设置在${limits.recommended.min}-${limits.recommended.max}mm范围内`);
+    }
+    
+    if (errorTypes.has('INVALID_WELDING_SEGMENTS')) {
+      const limits = constraintManager.getValidationLimits('maxWeldingSegments');
+      suggestions.push(`焊接段数建议设置在${limits.recommended.min}-${limits.recommended.max}段范围内，1段表示不允许焊接`);
     }
 
-    const aggregated = {
-      solutions: optimizationOutput.result.solutions,
-      totalModuleUsed: 0,
-      totalMaterial: 0,
-      totalWaste: 0,
-      totalRealRemainder: 0,
-      totalPseudoRemainder: 0,
-      totalLossRate: 0,
-      totalDesignSteelLength: 0,
-      executionTime: optimizationOutput.result.executionTime || 0,
-    };
-
-    // 遍历所有规格的解决方案进行累加
-    for (const specKey in aggregated.solutions) {
-      const solution = aggregated.solutions[specKey];
-      aggregated.totalModuleUsed += solution.totalModuleUsed || 0;
-      aggregated.totalMaterial += solution.totalMaterial || 0;
-      aggregated.totalWaste += solution.totalWaste || 0;
-      aggregated.totalRealRemainder += solution.totalRealRemainder || 0;
-      aggregated.totalPseudoRemainder += solution.totalPseudoRemainder || 0;
-      aggregated.totalDesignSteelLength += solution.totalDesignSteelLength || 0;
+    if (suggestions.length === 0) {
+      suggestions.push('请检查输入数据的完整性和格式正确性');
     }
 
-    // 计算最终总损耗率
-    if (aggregated.totalMaterial > 0) {
-      aggregated.totalLossRate = parseFloat(
-        (((aggregated.totalWaste + aggregated.totalRealRemainder) / aggregated.totalMaterial) * 100).toFixed(2)
-      );
-    }
-
-    return aggregated;
+    return suggestions;
   }
 
   /**
@@ -336,11 +372,14 @@ class OptimizationService {
    * 创建约束对象
    */
   createConstraints(constraintsData = {}) {
+    // 🔧 修复：使用约束配置中心的默认值，消除硬编码
+    const defaults = constraintManager.getDefaultConstraints();
+    
     return new OptimizationConstraints({
-      wasteThreshold: constraintsData.wasteThreshold || 100,
-      targetLossRate: constraintsData.targetLossRate || 5,
-      timeLimit: constraintsData.timeLimit || 30000,
-      maxWeldingSegments: constraintsData.maxWeldingSegments || 1
+      wasteThreshold: constraintsData.wasteThreshold || defaults.wasteThreshold,
+      targetLossRate: constraintsData.targetLossRate || defaults.targetLossRate,
+      timeLimit: constraintsData.timeLimit || defaults.timeLimit,
+      maxWeldingSegments: constraintsData.maxWeldingSegments || defaults.maxWeldingSegments
     });
   }
 

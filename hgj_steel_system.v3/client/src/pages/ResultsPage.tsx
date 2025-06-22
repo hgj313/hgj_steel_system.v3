@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Alert, 
   Tabs, 
@@ -26,6 +26,7 @@ const ResultsPage: React.FC = () => {
   const results = currentOptimization?.results;
   const [activeTab, setActiveTab] = useState('overview');
   const [exporting, setExporting] = useState(false);
+  const hasWarnedRef = useRef(false);
 
   // 使用统一的数据处理Hook - 这是解决错误引用值问题的核心
   const processedResults = useOptimizationResults(results, designSteels, moduleSteels);
@@ -64,8 +65,12 @@ const ResultsPage: React.FC = () => {
     if (processedResults.hasDataError) {
       message.error(`数据异常：${processedResults.errorMessage}`);
     } else if (!processedResults.isAllRequirementsSatisfied) {
-      message.warning('部分需求未满足，请检查优化配置');
+      if (!hasWarnedRef.current) {
+        message.warning('部分需求未满足，请检查优化配置');
+        hasWarnedRef.current = true;
+      }
     } else {
+      hasWarnedRef.current = false;
       console.log('✅ 数据验证通过，所有需求已满足');
     }
 

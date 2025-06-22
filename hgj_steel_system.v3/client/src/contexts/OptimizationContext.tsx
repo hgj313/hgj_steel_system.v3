@@ -1,5 +1,6 @@
 import React, { createContext, useContext, ReactNode, useState, useEffect, useCallback } from 'react';
 import { useAsyncOptimization } from '../hooks/useOptimizationResults';
+import { DEFAULT_CONSTRAINTS } from '../types';
 
 // 设计钢材接口
 export interface DesignSteel {
@@ -97,15 +98,10 @@ export interface OptimizationContextType {
   // 调试方法
   debugContext: () => void;
   forceReloadData: () => void;
-}
+  }
 
 // 默认约束条件
-const defaultConstraints: OptimizationConstraints = {
-  wasteThreshold: 100,
-  targetLossRate: 5,
-  timeLimit: 30,
-  maxWeldingSegments: 1
-};
+const defaultConstraints: OptimizationConstraints = { ...DEFAULT_CONSTRAINTS };
 
 // LocalStorage 键名
 const STORAGE_KEYS = {
@@ -139,12 +135,17 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
   // 集成异步优化任务Hook
   const asyncOptimization = useAsyncOptimization();
 
-  // 保存数据到localStorage
+  // 保存数据到localStorage（增强版，带日志、异常捕获、体积限制）
   const saveToStorage = useCallback((key: string, data: any) => {
     try {
-      localStorage.setItem(key, JSON.stringify(data));
-    } catch (error) {
-      console.error('保存数据失败:', error);
+      const dataStr = JSON.stringify(data);
+      console.log(`[localStorage] 即将写入 key=${key}，长度=${dataStr.length}，内容预览=`, dataStr.slice(0, 500));
+      localStorage.setItem(key, dataStr);
+    } catch (error: any) {
+      console.error(`[localStorage] 保存数据失败:`, error);
+      if (error && error.name === 'QuotaExceededError') {
+        alert('本地存储空间不足，部分功能将无法使用，请清理历史或联系开发优化！');
+      }
     }
   }, []);
 
@@ -193,16 +194,16 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
         }
       };
       
-      const newHistory = [historyRecord, ...optimizationHistory];
+      // 只保留最近10条历史，防止localStorage爆满
+      const newHistory = [historyRecord, ...optimizationHistory].slice(0, 10);
       setOptimizationHistory(newHistory);
       saveToStorage(STORAGE_KEYS.OPTIMIZATION_HISTORY, newHistory);
     }
   }, [asyncOptimization.currentTask, asyncOptimization.isActive, designSteels, moduleSteels, constraints, optimizationHistory, saveToStorage]);
 
-  // 从localStorage加载数据
+  // 从localStorage加载数据（增强版，带异常捕获）
   useEffect(() => {
     console.log('=== OptimizationContext 初始化加载数据 ===');
-    
     try {
       const savedDesignSteels = localStorage.getItem(STORAGE_KEYS.DESIGN_STEELS);
       if (savedDesignSteels) {
@@ -210,35 +211,38 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
         setDesignSteelsState(parsedDesignSteels);
         console.log('加载设计钢材:', parsedDesignSteels.length, '条');
       }
-
       const savedModuleSteels = localStorage.getItem(STORAGE_KEYS.MODULE_STEELS);
       if (savedModuleSteels) {
         const parsedModuleSteels = JSON.parse(savedModuleSteels);
         setModuleSteelsState(parsedModuleSteels);
         console.log('加载模数钢材:', parsedModuleSteels.length, '条');
       }
-
       const savedConstraints = localStorage.getItem(STORAGE_KEYS.CONSTRAINTS);
       if (savedConstraints) {
         const parsedConstraints = JSON.parse(savedConstraints);
         setConstraintsState(parsedConstraints);
         console.log('加载约束条件:', parsedConstraints);
       }
-
       const savedCurrentOptimization = localStorage.getItem(STORAGE_KEYS.CURRENT_OPTIMIZATION);
       if (savedCurrentOptimization) {
         const parsedOptimization = JSON.parse(savedCurrentOptimization);
         setCurrentOptimization(parsedOptimization);
         console.log('加载当前优化结果:', parsedOptimization.id, parsedOptimization.status);
       }
-
-      const savedHistory = localStorage.getItem(STORAGE_KEYS.OPTIMIZATION_HISTORY);
-      if (savedHistory) {
-        const parsedHistory = JSON.parse(savedHistory);
-        setOptimizationHistory(parsedHistory);
-        console.log('加载优化历史:', parsedHistory.length, '条');
+      let parsedHistory: OptimizationResult[] = [];
+      try {
+        const savedHistory = localStorage.getItem(STORAGE_KEYS.OPTIMIZATION_HISTORY);
+        if (savedHistory) {
+          parsedHistory = JSON.parse(savedHistory);
+          // 兜底：只保留最近10条
+          parsedHistory = parsedHistory.slice(0, 10);
+          setOptimizationHistory(parsedHistory);
+          console.log('加载优化历史:', parsedHistory.length, '条');
+        }
+      } catch (e) {
+        console.warn('读取优化历史失败，使用空历史');
+        setOptimizationHistory([]);
       }
-      
       setIsDataLoaded(true);
       console.log('=== 数据加载完成 ===');
     } catch (error) {

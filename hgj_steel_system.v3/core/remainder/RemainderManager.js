@@ -4,11 +4,13 @@
  */
 
 const { RemainderV3, REMAINDER_TYPES } = require('../../api/types');
+const constraintManager = require('../config/ConstraintManager');
 const { v4: uuidv4 } = require('uuid');
 
 class RemainderManager {
-  constructor(wasteThreshold = 100) {
-    this.wasteThreshold = wasteThreshold;
+  constructor(wasteThreshold = null) {
+    // 🔧 修复：使用约束配置中心的默认废料阈值，消除硬编码
+    this.wasteThreshold = wasteThreshold || constraintManager.getRemainderConfig().defaultWasteThreshold;
     this.remainderPools = {}; // 按规格+截面面积组合键分组的余料池
     this.remainderCounters = {}; // 余料计数器
     this.usageHistory = {}; // 余料使用历史
@@ -39,8 +41,9 @@ class RemainderManager {
     }
     counter.numbers[letter]++;
     
-    // 如果单个字母的数量超过50，切换到下一个字母
-    if (counter.numbers[letter] > 50) {
+    // 🔧 修复：使用约束配置中心的字母限制，消除硬编码
+    const letterLimit = constraintManager.getRemainderConfig().idGeneration.letterLimit;
+    if (counter.numbers[letter] > letterLimit) {
       counter.letterIndex++;
       const newLetter = String.fromCharCode(97 + counter.letterIndex);
       counter.numbers[newLetter] = 1;
@@ -101,6 +104,11 @@ class RemainderManager {
       result.statistics.pendingRemainderGenerated = remainder.length;
       
       console.log(`⏳ ${groupKey}余料 ${remainder.id} (${remainder.length}mm) 标记为待定状态并加入池中 [${context.source || '未知来源'}] - 真余料状态将在生产结束后确定`);
+    }
+    
+    // 断言：remainder 不能是废料类型被加入池
+    if (remainder.type === 'waste') {
+      throw new Error('evaluateAndProcessRemainder试图将废料对象加入余料池！');
     }
     
     return result;
@@ -425,35 +433,36 @@ class RemainderManager {
     });
     
     const newRemainders = [];
-    const realRemainders = [];
     let waste = 0;
     
+    // 🎯 统一计算架构核心：在这里统一判断新余料是否是废料
     if (newRemainderLength > 0) {
-      const sourceChain = remainders.reduce((chain, r) => chain.concat(r.sourceChain || [r.id]), []);
-      
-      const newRemainder = new RemainderV3({
-        id: this.generateRemainderID(groupKey),
-        length: newRemainderLength,
-        type: REMAINDER_TYPES.PENDING, // 初始为待定状态
-        sourceChain,
-        groupKey,
-        originalLength: totalLength,
-        parentId: remainders.map(r => r.id).join('+'),
-        createdAt: new Date().toISOString()
-      });
-      
-      // 🔧 修复：使用统一的动态判断替代重复逻辑
-      const evaluationResult = this.evaluateAndProcessRemainder(newRemainder, groupKey, {
-        source: '余料组合切割后'
-      });
-      
-      if (evaluationResult.isWaste) {
-        waste = evaluationResult.wasteLength;
-      } else if (evaluationResult.isRealRemainder) {
-        realRemainders.push(newRemainder);
+      if (newRemainderLength < this.wasteThreshold) {
+        // 小于阈值，直接计为废料，不再创建新的余料对象
+        waste = newRemainderLength;
+        // 不生成 newRemainders
+      } else {
+        // 大于等于阈值，创建新的待定余料
+        const sourceChain = remainders.reduce((chain, r) => chain.concat(r.sourceChain || [r.id]), []);
+        const newRemainder = new RemainderV3({
+          id: this.generateRemainderID(groupKey),
+          length: newRemainderLength,
+          type: REMAINDER_TYPES.PENDING, // 初始为待定状态
+          sourceChain,
+          groupKey,
+          originalLength: totalLength,
+          parentId: remainders.map(r => r.id).join('+'),
+          createdAt: new Date().toISOString()
+        });
+        this.remainderPools[groupKey].push(newRemainder);
+        this.remainderPools[groupKey].sort((a, b) => a.length - b.length);
+        newRemainders.push(newRemainder);
       }
-      
-      newRemainders.push(newRemainder);
+    }
+    
+    // 断言：newRemainders 里不能有 type 为 'waste' 的对象
+    if (newRemainders.some(r => r.type === 'waste')) {
+      throw new Error('newRemainders中混入了废料对象！');
     }
     
     // 创建切割详情
@@ -477,7 +486,7 @@ class RemainderManager {
       usedRemainders: remainders,
       newRemainders: newRemainders,
       pseudoRemainders,
-      realRemainders,
+      realRemainders: newRemainders, // 修正：新产生的可用余料就是realRemainders的候选
       cuttingLength: targetLength,
       waste,
       details: details
@@ -517,26 +526,15 @@ class RemainderManager {
 
   /**
    * 🔧 修复：生产结束后的余料最终处理
-   * 关键修复：只有在此阶段才能确定真余料状态
+   * ❌ 统计逻辑已移至StatisticsCalculator，此方法仅负责状态更新
    */
   finalizeRemainders() {
-    const finalStats = {
-      totalWaste: 0,
-      totalRealRemainders: 0,
-      totalPseudoRemainders: 0,
-      remaindersByGroup: {}
-    };
-
-    console.log('\n🏁 开始生产结束后的余料最终处理...');
+    console.log('\n🏁 开始生产结束后的余料最终状态确定...');
     
-    // 🔧 关键修复：遍历所有余料池，将剩余的pending余料标记为真余料
+    let totalProcessedRemainders = 0;
+    
+    // 🔧 关键修复：只负责状态更新，不进行统计计算
     for (const [groupKey, remainders] of Object.entries(this.remainderPools)) {
-      const groupStats = {
-        pendingToReal: 0,
-        realCount: 0,
-        realLength: 0
-      };
-      
       console.log(`\n📋 处理 ${groupKey} 组余料池...`);
     
       // 🔧 修复：只处理pending状态的余料
@@ -544,37 +542,29 @@ class RemainderManager {
     
       console.log(`  - 池中待定余料数量: ${pendingRemainders.length}`);
       
-      // 🔧 关键修复：将pending余料标记为真余料
-    pendingRemainders.forEach(remainder => {
-        remainder.markAsReal();
-        groupStats.pendingToReal++;
-        groupStats.realCount++;
-        groupStats.realLength += remainder.length;
-        
-        console.log(`  ✅ 余料 ${remainder.id} (${remainder.length}mm) 确定为真余料`);
+      // 🔧 关键修复：根据长度正确分类pending余料，只更新状态
+      pendingRemainders.forEach(remainder => {
+        if (remainder.length < this.wasteThreshold) {
+          // 小于阈值的余料标记为废料
+          remainder.markAsWaste();
+          console.log(`  🗑️ 余料 ${remainder.id} (${remainder.length}mm) 最终确定为废料 (< ${this.wasteThreshold}mm阈值)`);
+        } else {
+          // 大于等于阈值的余料标记为真余料
+          remainder.markAsReal();
+          console.log(`  ✅ 余料 ${remainder.id} (${remainder.length}mm) 确定为真余料 (≥ ${this.wasteThreshold}mm阈值)`);
+        }
+        totalProcessedRemainders++;
       });
-      
-      finalStats.totalRealRemainders += groupStats.realCount;
-      finalStats.remaindersByGroup[groupKey] = groupStats;
-    
-      console.log(`  📊 ${groupKey} 组统计: ${groupStats.pendingToReal}个待定余料 → ${groupStats.realCount}个真余料 (总长度: ${groupStats.realLength}mm)`);
     }
 
-    // 统计所有类型的余料
-    this.getAllRemainders().forEach(remainder => {
-      if (remainder.type === REMAINDER_TYPES.WASTE) {
-        finalStats.totalWaste += remainder.length;
-      } else if (remainder.type === REMAINDER_TYPES.PSEUDO) {
-        finalStats.totalPseudoRemainders++;
-      }
-    });
-
-    console.log('\n🎯 余料最终处理完成统计:');
-    console.log(`  - 真余料: ${finalStats.totalRealRemainders}个`);
-    console.log(`  - 伪余料: ${finalStats.totalPseudoRemainders}个`);
-    console.log(`  - 废料总长度: ${finalStats.totalWaste}mm`);
+    console.log(`\n✅ 余料状态确定完成，处理了 ${totalProcessedRemainders} 个待定余料`);
+    console.log(`📊 所有统计计算将由StatisticsCalculator统一完成`);
     
-    return finalStats;
+    // ❌ 不再返回统计数据，统计计算由StatisticsCalculator负责
+    return {
+      processedCount: totalProcessedRemainders,
+      message: '状态更新完成，统计计算已移至StatisticsCalculator'
+    };
   }
 
   /**

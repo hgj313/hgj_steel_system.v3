@@ -99,50 +99,67 @@ class RemainderV3 {
 
 /**
  * 优化约束条件
+ * 🔧 V3.1 修复：与约束配置中心保持一致，统一参数名称
  */
 class OptimizationConstraints {
   constructor({
-    wasteThreshold = 500,
-    weldingSegments = 2,
-    maxIterations = 1000,
+    wasteThreshold = 100,
+    targetLossRate = 5,
     timeLimit = 30000,
-    // V3新增：动态焊接约束
+    maxWeldingSegments = 1,
+    // 保留V3动态焊接约束参数以保持兼容性
+    weldingSegments = null,      // 向后兼容
+    maxIterations = 1000,
     allowDynamicWelding = true,
-    maxWeldingSegments = 10,
     minWeldingSegments = 1,
-    weldingCostPerSegment = 0.1, // 每段焊接的成本系数
-    weldingTimePerSegment = 5    // 每段焊接的时间成本(秒)
+    weldingCostPerSegment = 0.1,
+    weldingTimePerSegment = 5
   } = {}) {
+    // 🔧 修复：统一约束参数命名，与约束配置中心保持一致
     this.wasteThreshold = wasteThreshold;
-    this.weldingSegments = weldingSegments;
-    this.maxIterations = maxIterations;
+    this.targetLossRate = targetLossRate;
     this.timeLimit = timeLimit;
-    
-    // V3动态焊接约束
-    this.allowDynamicWelding = allowDynamicWelding;
     this.maxWeldingSegments = maxWeldingSegments;
+    
+    // 向后兼容：如果传入了weldingSegments，映射到maxWeldingSegments
+    if (weldingSegments !== null) {
+      this.maxWeldingSegments = weldingSegments;
+    }
+    this.weldingSegments = this.maxWeldingSegments; // 保持兼容性
+    
+    // V3动态焊接约束（保留但不再是主要参数）
+    this.allowDynamicWelding = allowDynamicWelding;
     this.minWeldingSegments = minWeldingSegments;
     this.weldingCostPerSegment = weldingCostPerSegment;
     this.weldingTimePerSegment = weldingTimePerSegment;
+    this.maxIterations = maxIterations;
     
-    // 验证约束参数
-    this.validateConstraints();
+    // 🔧 修复：移除严格的验证逻辑，使其更灵活
+    // 验证逻辑现在由约束配置中心统一处理
+    this.validateBasicConstraints();
   }
 
   /**
-   * V3新增：验证约束参数的合理性
+   * V3.1 修复：基础约束验证（更宽松的验证逻辑）
+   * 严格验证由约束配置中心统一处理
    */
-  validateConstraints() {
-    if (this.weldingSegments < this.minWeldingSegments) {
-      throw new Error(`焊接段数${this.weldingSegments}不能小于最小值${this.minWeldingSegments}`);
-    }
-    
-    if (this.weldingSegments > this.maxWeldingSegments) {
-      throw new Error(`焊接段数${this.weldingSegments}不能大于最大值${this.maxWeldingSegments}`);
-    }
-    
+  validateBasicConstraints() {
+    // 🔧 修复：只进行最基本的验证，避免过于严格的限制
     if (this.wasteThreshold <= 0) {
       throw new Error(`废料阈值${this.wasteThreshold}必须大于0`);
+    }
+    
+    if (this.maxWeldingSegments < 1) {
+      throw new Error(`最大焊接段数${this.maxWeldingSegments}不能小于1`);
+    }
+    
+    if (this.timeLimit <= 0) {
+      throw new Error(`时间限制${this.timeLimit}必须大于0`);
+    }
+    
+    // 不再抛出严格的范围错误，而是给出警告
+    if (this.maxWeldingSegments > 10) {
+      console.warn(`⚠️ 焊接段数${this.maxWeldingSegments}较大，可能影响优化效果`);
     }
   }
 
@@ -286,7 +303,8 @@ class CuttingDetail {
 }
 
 /**
- * 切割计划类型 - V3.0增强
+ * CuttingPlan 切割计划类型 - V3.0 增强
+ * 注意：newRemainders 字段只允许 type !== 'waste' 的余料对象，禁止混入废料对象！
  */
 class CuttingPlan {
   constructor({
@@ -371,105 +389,24 @@ class OptimizationResult {
 }
 
 // ==================== 损耗率计算 ====================
+// 🔧 统一架构重构：损耗率计算已整合到StatisticsCalculator中
+// 这里保留注释作为架构变更记录
 
-/**
- * 损耗率计算器 - V3.0新设计
+/*
+ * 📋 架构变更记录 - V3.1统一计算器重构
+ * 
+ * 原LossRateCalculator类已被删除，所有损耗率计算功能已整合到StatisticsCalculator中：
+ * - calculateSpecificationLossRate() -> StatisticsCalculator.calculateSpecificationLossRate()
+ * - calculateTotalLossRate() -> StatisticsCalculator.calculateTotalLossRate()  
+ * - validateLossRateCalculation() -> StatisticsCalculator.validateLossRateCalculation()
+ * - calculateTotalModuleMaterial() -> 直接使用统计结果，不再需要独立计算
+ * 
+ * 优势：
+ * ✅ 单一数据源，消除架构冲突
+ * ✅ 统一精度控制和错误处理
+ * ✅ 消除"幽灵调用点"问题
+ * ✅ 完美的架构统一性
  */
-class LossRateCalculator {
-  constructor() {
-    this.PRECISION = 4; // 浮点精度
-    this.ERROR_THRESHOLD = 0.01; // 误差阈值
-  }
-
-  /**
-   * 计算单规格损耗率
-   * 公式：(真余料+废料)/该规格模数钢材总长度*100%
-   */
-  calculateSpecificationLossRate(specSolution) {
-    const totalWasteAndReal = specSolution.totalWaste + specSolution.totalRealRemainder;
-    const totalModuleMaterial = this.calculateTotalModuleMaterial(specSolution);
-    
-    if (totalModuleMaterial === 0) return 0;
-    
-    return parseFloat(((totalWasteAndReal / totalModuleMaterial) * 100).toFixed(this.PRECISION));
-  }
-
-  /**
-   * 计算总损耗率
-   * 公式：各规格真余料废料总和/各规格模数钢材总长度总和*100%
-   */
-  calculateTotalLossRate(allSolutions) {
-    let totalWasteAndReal = 0;
-    let totalModuleMaterial = 0;
-
-    Object.values(allSolutions).forEach(solution => {
-      totalWasteAndReal += solution.totalWaste + solution.totalRealRemainder;
-      totalModuleMaterial += this.calculateTotalModuleMaterial(solution);
-    });
-
-    if (totalModuleMaterial === 0) return 0;
-
-    return parseFloat(((totalWasteAndReal / totalModuleMaterial) * 100).toFixed(this.PRECISION));
-  }
-
-  /**
-   * 验证损耗率计算正确性
-   * 检查加权平均是否等于总损耗率
-   */
-  validateLossRateCalculation(allSolutions) {
-    const totalLossRate = this.calculateTotalLossRate(allSolutions);
-    
-    // 计算加权平均
-    let weightedSum = 0;
-    let totalWeight = 0;
-
-    const specResults = Object.values(allSolutions).map(solution => {
-      const specLossRate = this.calculateSpecificationLossRate(solution);
-      const weight = this.calculateTotalModuleMaterial(solution);
-      
-      weightedSum += specLossRate * weight;
-      totalWeight += weight;
-
-      return {
-        lossRate: specLossRate,
-        weight: weight,
-        contribution: specLossRate * weight
-      };
-    });
-
-    const weightedAverage = totalWeight > 0 ? 
-      parseFloat((weightedSum / totalWeight).toFixed(this.PRECISION)) : 0;
-
-    const difference = Math.abs(totalLossRate - weightedAverage);
-    const isValid = difference <= this.ERROR_THRESHOLD;
-
-    return {
-      isValid,
-      totalLossRate,
-      weightedAverage,
-      difference,
-      specResults,
-      errorMessage: isValid ? null : `损耗率计算存在误差: ${difference.toFixed(4)}%`
-    };
-  }
-
-  /**
-   * 计算规格的模数钢材总长度
-   */
-  calculateTotalModuleMaterial(solution) {
-    // 🔧 修复：直接读取由`calculateSolutionStats`预计算好的准确值
-    // 这个值基于物料守恒定律，是最可靠的数据源
-    if (solution && solution.totalMaterial !== undefined) {
-      return solution.totalMaterial;
-    }
-
-    // 备用逻辑：如果预计算值不存在，则从头计算（保持健壮性）
-    console.warn('⚠️ calculateTotalModuleMaterial：预计算的totalMaterial不存在，从切割计划重新计算');
-    return solution.cuttingPlans
-      .filter(plan => plan.sourceType === 'module')
-      .reduce((sum, plan) => sum + (plan.sourceLength || plan.moduleLength || 0), 0);
-  }
-}
 
 // ==================== 导出定义 ====================
 
@@ -488,8 +425,8 @@ module.exports = {
   OptimizationSolution,
   OptimizationResult,
   
-  // 计算器
-  LossRateCalculator,
+  // 🔧 统一架构：LossRateCalculator已整合到StatisticsCalculator中
+  // 计算器相关功能请使用 StatisticsCalculator
   
   // 常量
   REMAINDER_TYPES: {

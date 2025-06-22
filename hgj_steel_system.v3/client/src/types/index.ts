@@ -109,6 +109,7 @@ export interface CuttingPlan {
 export interface OptimizationSolution {
   cuttingPlans: CuttingPlan[];
   totalModuleUsed: number;
+  totalMaterial?: number; // 新增：总材料长度
   totalWaste: number;
   totalPseudoRemainder: number;
   totalRealRemainder: number;
@@ -129,6 +130,70 @@ export interface LossRateValidation {
   errorMessage?: string;
 }
 
+// 新增：完整统计数据类型定义
+export interface CompleteStatsData {
+  global: {
+    totalModuleCount: number;
+    totalModuleLength: number;
+    totalWaste: number;
+    totalRealRemainder: number;
+    totalPseudoRemainder: number;
+    totalDesignSteelLength: number;
+    overallLossRate: number;
+    materialUtilizationRate: number;
+  };
+  chartData: {
+    lossRateData: Array<{
+      specification: string;
+      groupKey: string;
+      lossRate: number;
+      moduleUsed: number;
+      waste: number;
+      realRemainder: number;
+      pseudoRemainder: number;
+      utilization: number;
+    }>;
+    pieData: Array<{
+      name: string;
+      value: number;
+      fill: string;
+    }>;
+  };
+  requirementValidation: {
+    items: Array<{
+      key: string;
+      id: string;
+      specification: string;
+      crossSection: number;
+      length: number;
+      quantity: number;
+      produced: number;
+      satisfied: boolean;
+      difference: number;
+      groupKey?: string;
+      satisfactionRate: number;
+    }>;
+    summary: {
+      total: number;
+      satisfied: number;
+      unsatisfied: number;
+      allSatisfied: boolean;
+      overallSatisfactionRate: number;
+    };
+  };
+  moduleUsageStats: {
+    bySpecification: Record<string, any>;
+    grandTotal: { count: number; totalLength: number };
+  };
+  specificationDetails: Record<string, any>;
+  consistencyCheck: {
+    isConsistent: boolean;
+    errors: string[];
+    warnings: string[];
+    checkTime: string;
+  };
+}
+
 export interface OptimizationResult {
   solutions: Record<string, OptimizationSolution>;
   totalLossRate: number;
@@ -140,6 +205,14 @@ export interface OptimizationResult {
   executionTime: number;
   lossRateValidation?: LossRateValidation;
   constraintValidation?: ConstraintValidation;
+  completeStats?: CompleteStatsData; // 新增：完整的预计算统计数据
+  processingStatus?: {
+    isCompleted: boolean;
+    remaindersFinalized: boolean;
+    readyForRendering: boolean;
+    completedAt: string;
+    dataConsistencyChecked?: boolean;
+  };
 }
 
 // ==================== API响应类型 ====================
@@ -367,11 +440,13 @@ export const SOURCE_TYPES = {
   REMAINDER: 'remainder' as const,
 };
 
+// 🔧 修复：前端约束默认值，对应后端约束配置中心
+// 注意：timeLimit在前端以秒为单位显示，后端以毫秒处理
 export const DEFAULT_CONSTRAINTS: OptimizationConstraints = {
-  wasteThreshold: 100,
-  targetLossRate: 5,
-  timeLimit: 30000,
-  maxWeldingSegments: 1,
+  wasteThreshold: 100,        // 废料阈值 (mm)
+  targetLossRate: 5,          // 目标损耗率 (%)
+  timeLimit: 30,              // 计算时间限制 (秒) - 注意单位
+  maxWeldingSegments: 1,      // 最大焊接段数 (段)
 };
 
 export const UI_STEPS = {

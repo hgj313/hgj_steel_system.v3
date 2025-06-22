@@ -11,15 +11,16 @@ const {
   OptimizationResult,
   CuttingPlan,
   CuttingDetail,
-  LossRateCalculator,
   REMAINDER_TYPES,
   SOURCE_TYPES,
   OptimizationConstraints
 } = require('../../api/types');
 
+const ResultBuilder = require('./ResultBuilder');
 const RemainderManager = require('../remainder/RemainderManager');
 const ConstraintValidator = require('../constraints/ConstraintValidator');
 const ParallelOptimizationMonitor = require('./ParallelOptimizationMonitor');
+const constraintManager = require('../config/ConstraintManager');
 const { v4: uuidv4 } = require('uuid');
 
 class SteelOptimizerV3 {
@@ -28,7 +29,8 @@ class SteelOptimizerV3 {
     this.moduleSteels = moduleSteels; // 保留原始模数钢材作为模板
     this.constraints = constraints;
     this.startTime = Date.now();
-    this.lossRateCalculator = new LossRateCalculator();
+    // 🔧 统一架构：损耗率计算已整合到StatisticsCalculator中
+    this.resultBuilder = new ResultBuilder(); // 统一的结果构建器
     this.moduleCounters = {}; // 模数钢材计数器
     
     // V3新增：规格化模数钢材池管理
@@ -125,8 +127,10 @@ class SteelOptimizerV3 {
       // 4. 计算损耗率和验证
       const result = this.buildOptimizationResult(solutions, validation);
       
-      // 5. 验证损耗率计算
-      const lossRateValidation = this.lossRateCalculator.validateLossRateCalculation(solutions);
+      // 5. 🔧 统一架构：使用StatisticsCalculator进行损耗率验证
+      // 注意：验证需要使用统计结果而不是原始solutions
+      const statisticsResult = this.resultBuilder.statisticsCalculator.calculateAllStatistics(solutions, this.remainderManager);
+      const lossRateValidation = this.resultBuilder.statisticsCalculator.validateLossRateCalculation(statisticsResult.specificationStats);
       if (!lossRateValidation.isValid) {
         console.warn('⚠️ 损耗率计算验证失败:', lossRateValidation.errorMessage);
       }
@@ -286,7 +290,6 @@ class SteelOptimizerV3 {
    * 创建独立的余料管理器实例
    */
   createIndependentRemainderManager(groupKey) {
-    const RemainderManager = require('../remainder/RemainderManager');
     const independentManager = new RemainderManager(this.constraints.wasteThreshold);
     
     // 预初始化该组合的余料池
@@ -323,7 +326,7 @@ class SteelOptimizerV3 {
 
   /**
    * 🔧 关键修复：更新所有切割计划中的余料状态
-   * 在finalizeRemainders之后，将切割计划中pending状态的余料更新为real状态
+   * 在finalizeRemainders之后，将切割计划中pending状态的余料更新为正确状态
    */
   updateCuttingPlansRemainderStatus(solutions) {
     console.log('\n🔄 更新切割计划中的余料状态...');
@@ -338,17 +341,22 @@ class SteelOptimizerV3 {
       remainderMap.set(remainder.id, remainder);
     });
     
+    console.log(`📋 主余料管理器中共有 ${allFinalizedRemainders.length} 个已最终化的余料`);
+    
     // 遍历所有解决方案和切割计划
     Object.entries(solutions).forEach(([groupKey, solution]) => {
-      solution.cuttingPlans?.forEach(plan => {
+      solution.cuttingPlans?.forEach((plan, planIndex) => {
         // 更新newRemainders中的状态
         if (plan.newRemainders && plan.newRemainders.length > 0) {
-          plan.newRemainders.forEach(remainder => {
+          plan.newRemainders.forEach((remainder, remainderIndex) => {
             const finalizedRemainder = remainderMap.get(remainder.id);
             if (finalizedRemainder && remainder.type !== finalizedRemainder.type) {
               console.log(`  🔄 更新余料状态: ${remainder.id} (${remainder.type} → ${finalizedRemainder.type})`);
               remainder.type = finalizedRemainder.type;
               updatedCount++;
+            } else if (!finalizedRemainder) {
+              // 如果在主余料管理器中找不到，可能是因为余料被使用了，需要特殊处理
+              console.log(`  ⚠️ 余料 ${remainder.id} 在主管理器中未找到，可能已被使用`);
             }
           });
         }
@@ -365,6 +373,9 @@ class SteelOptimizerV3 {
           });
         }
       });
+      
+      // 🔧 修复：在更新余料状态后，不再需要重新计算统计数据
+      // 所有统计将在优化流程的最后，由ResultBuilder统一计算
     });
     
     console.log(`✅ 切割计划余料状态更新完成，共更新 ${updatedCount} 个余料`);
@@ -439,12 +450,7 @@ class SteelOptimizerV3 {
       console.log(`✅ ${groupKey}组合完成${mwcdStats.exchangesPerformed}次内部交换，效益提升${mwcdStats.totalBenefitGained.toFixed(2)}mm`);
     }
     
-    // 🔧 修复：将taskStats数据汇总到solution对象，解决"数据孤岛"问题
     this.mergeTaskStatsToSolution(solution, taskStats);
-    
-    // 🔧 修复：删除手动统计逻辑，避免"幽灵统计"，完全信任calculateSolutionStats
-    // 计算解决方案统计（这是唯一的统计来源）
-    this.calculateSolutionStats(solution);
     
     console.log(`✅ 并行任务${groupKey}优化完成: ${taskStats.cuts}次切割，${iterationCount}轮迭代，${mwcdStats.exchangesPerformed}次内部交换`);
     
@@ -477,7 +483,8 @@ class SteelOptimizerV3 {
     solution.taskStats.totalCuts += taskStats.cuts || 0;
     solution.taskStats.totalModuleSteelsUsed += taskStats.moduleSteelsUsed || 0;
     solution.taskStats.totalModuleLength += taskStats.totalModuleLength || 0;
-    solution.taskStats.totalWasteGenerated += taskStats.wasteGenerated || 0;
+    // 🎯 统一计算架构：废料统计已在使用时精确计算，此处不再重复累加
+    // solution.taskStats.totalWasteGenerated += taskStats.wasteGenerated || 0;
     solution.taskStats.totalRemaindersReused += taskStats.remaindersReused || 0;
     solution.taskStats.totalWeldingOperations += taskStats.weldingOperations || 0;
     
@@ -522,7 +529,7 @@ class SteelOptimizerV3 {
         quantity: 1
       }],
       usedRemainders: combination.remainders,
-      newRemainders: usageResult.newRemainders,
+      newRemainders: usageResult.newRemainders ? usageResult.newRemainders.filter(r => r.type !== 'waste') : [],
       pseudoRemainders: usageResult.pseudoRemainders,
       realRemainders: usageResult.realRemainders,
       waste: usageResult.waste
@@ -541,17 +548,25 @@ class SteelOptimizerV3 {
     
     // --- 强制互斥校验与修正 ---
     if (cuttingPlan) {
-      const newRemainderTotal = Array.isArray(cuttingPlan.newRemainders) ? cuttingPlan.newRemainders.reduce((sum, r) => sum + (r && r.length ? r.length : 0), 0) : 0;
+      // 🔧 修复：区分真余料和废料类型的newRemainders
+      const realRemainderTotal = Array.isArray(cuttingPlan.newRemainders) 
+        ? cuttingPlan.newRemainders
+            .filter(r => r && r.type !== 'waste') // 只统计非废料的余料
+            .reduce((sum, r) => sum + (r.length || 0), 0) 
+        : 0;
       const wasteVal = cuttingPlan.waste || 0;
-      if (newRemainderTotal > 0 && wasteVal > 0) {
+      
+      // 🔧 修复：只有真余料和waste同时存在时才是冲突
+      if (realRemainderTotal > 0 && wasteVal > 0) {
         // 互斥冲突，保留较大者
-        if (newRemainderTotal >= wasteVal) {
+        if (realRemainderTotal >= wasteVal) {
           cuttingPlan.waste = 0;
-          console.warn(`[互斥修正] cuttingPlan(${cuttingPlan.sourceId || ''}): newRemainders(${newRemainderTotal})与waste(${wasteVal})同时为正，已将waste清零`);
+          console.warn(`[互斥修正] cuttingPlan(${cuttingPlan.sourceId || ''}): 真余料(${realRemainderTotal})与waste(${wasteVal})同时为正，已将waste清零`);
         } else {
-          cuttingPlan.newRemainders = [];
+          // 清空非废料的余料，保留废料类型的余料
+          cuttingPlan.newRemainders = cuttingPlan.newRemainders.filter(r => r.type === 'waste');
           cuttingPlan.realRemainders = [];
-          console.warn(`[互斥修正] cuttingPlan(${cuttingPlan.sourceId || ''}): newRemainders(${newRemainderTotal})与waste(${wasteVal})同时为正，已将newRemainders清空`);
+          console.warn(`[互斥修正] cuttingPlan(${cuttingPlan.sourceId || ''}): 真余料(${realRemainderTotal})与waste(${wasteVal})同时为正，已清空真余料`);
         }
       }
     }
@@ -577,9 +592,10 @@ class SteelOptimizerV3 {
     
     const moduleId = this.generateModuleId(groupKey);
     const cuts = [];
-    const newRemainders = [];
     let remainingLength = bestModule.length;
     let currentQuantity = demand.remaining;
+    let waste = 0;
+    const newRemainders = [];
     
     // 计算最大可切割数量
     const maxCuts = Math.floor(remainingLength / demand.length);
@@ -607,13 +623,12 @@ class SteelOptimizerV3 {
       remainingLength -= demand.length * actualCuts;
       demand.remaining -= actualCuts;
       
-      // 🔧 修复：使用统一的余料处理逻辑
+      // 🎯 统一计算架构核心：将剩余部分统一交给 RemainderManager 处理
       if (remainingLength > 0) {
-        const remainder = new RemainderV3({
+        const remainderToEvaluate = new RemainderV3({
           id: `${moduleId}_remainder`,
           length: remainingLength,
-          type: REMAINDER_TYPES.PENDING, // 初始为待定状态，由统一方法判断
-          isConsumed: false,
+          type: REMAINDER_TYPES.PENDING,
           sourceChain: [moduleId],
           crossSection: bestModule.crossSection || 0,
           specification: groupKey,
@@ -622,61 +637,40 @@ class SteelOptimizerV3 {
           parentId: moduleId
         });
         
-        // 🔧 修复：使用统一的动态判断方法
-        const evaluationResult = remainderManager.evaluateAndProcessRemainder(remainder, groupKey, {
+        const evaluationResult = remainderManager.evaluateAndProcessRemainder(remainderToEvaluate, groupKey, {
           source: '模数钢材切割后'
         });
         
         if (evaluationResult.isWaste) {
-          // 废料直接计入统计
-          taskStats.wasteGenerated = (taskStats.wasteGenerated || 0) + evaluationResult.wasteLength;
+          waste = evaluationResult.wasteLength;
         } else if (evaluationResult.isPendingRemainder) {
-          // 待定余料已经被统一方法加入池中
-          newRemainders.push(remainder);
+          newRemainders.push(remainderToEvaluate);
         }
       }
       
-      // 🔧 修复关键问题：确保sourceType使用正确的常量值
       const cuttingPlan = new CuttingPlan({
-        sourceType: 'module', // 🎯 直接使用字符串，确保与损耗率计算器匹配
-        sourceId: moduleId,   // 🔧 修复：添加sourceId字段，用于统计模数钢材根数
+        sourceType: 'module',
+        sourceId: moduleId,
         sourceDescription: `${groupKey}组合模数钢材 ${moduleId}`,
         sourceLength: bestModule.length,
         moduleType: bestModule.name || `${bestModule.length}mm标准钢材`,
         moduleLength: bestModule.length,
         cuts: cuts,
-        newRemainders: newRemainders,
-        pseudoRemainders: [], // 模数钢材切割不产生伪余料
-        realRemainders: newRemainders, // 新产生的余料都是真余料
-        waste: remainingLength < this.constraints.wasteThreshold ? remainingLength : 0,
-        usedRemainders: [] // 模数钢材切割不使用已有余料
+        newRemainders: newRemainders ? newRemainders.filter(r => r.type !== 'waste') : [],
+        pseudoRemainders: [],
+        realRemainders: newRemainders,
+        waste: waste, // 🎯 废料值完全由 RemainderManager 决定
+        usedRemainders: []
       });
       
       solution.cuttingPlans.push(cuttingPlan);
       
-      // 更新统计信息
       taskStats.cuts += 1;
       taskStats.moduleSteelsUsed = (taskStats.moduleSteelsUsed || 0) + 1;
       taskStats.totalModuleLength = (taskStats.totalModuleLength || 0) + bestModule.length;
+      taskStats.wasteGenerated += waste; // 🎯 废料统计也使用 RemainderManager 的计算结果
       
-      console.log(`✅ ${groupKey}组合使用模数钢材: ${moduleId} (${bestModule.length}mm) → 切割${actualCuts}根${demand.length}mm，余料${remainingLength}mm`);
-      
-      // --- 强制互斥校验与修正 ---
-      if (cuttingPlan) {
-        const newRemainderTotal = Array.isArray(cuttingPlan.newRemainders) ? cuttingPlan.newRemainders.reduce((sum, r) => sum + (r && r.length ? r.length : 0), 0) : 0;
-        const wasteVal = cuttingPlan.waste || 0;
-        if (newRemainderTotal > 0 && wasteVal > 0) {
-          // 互斥冲突，保留较大者
-          if (newRemainderTotal >= wasteVal) {
-            cuttingPlan.waste = 0;
-            console.warn(`[互斥修正] cuttingPlan(${cuttingPlan.sourceId || ''}): newRemainders(${newRemainderTotal})与waste(${wasteVal})同时为正，已将waste清零`);
-          } else {
-            cuttingPlan.newRemainders = [];
-            cuttingPlan.realRemainders = [];
-            console.warn(`[互斥修正] cuttingPlan(${cuttingPlan.sourceId || ''}): newRemainders(${newRemainderTotal})与waste(${wasteVal})同时为正，已将newRemainders清空`);
-          }
-        }
-      }
+      console.log(`✅ ${groupKey}组合使用模数钢材: ${moduleId} (${bestModule.length}mm) → 切割${actualCuts}根${demand.length}mm，产生废料${waste}mm，新余料${newRemainders.length}个`);
       
       return true;
     }
@@ -726,24 +720,6 @@ class SteelOptimizerV3 {
     });
     
     console.log('🎯 按规格+截面面积组合分组结果:', Object.keys(groups));
-    return groups;
-  }
-
-  /**
-   * 废弃方法：按截面面积分组（V2妥协方案，V3不再使用）
-   */
-  groupByCrossSection() {
-    console.warn('⚠️ groupByCrossSection 是V2妥协方案，V3已改为按规格分组');
-    const groups = {};
-    
-    this.designSteels.forEach(steel => {
-      const key = Math.round(steel.crossSection);
-      if (!groups[key]) {
-        groups[key] = [];
-      }
-      groups[key].push(steel);
-    });
-    
     return groups;
   }
 
@@ -920,7 +896,6 @@ class SteelOptimizerV3 {
       reason: `可节省${cdSegments-1}个焊接点，效益${totalBenefit.toFixed(2)}mm`
     };
   }
-
   /**
    * 🔧 改进：执行完整的交换操作
    */
@@ -1231,157 +1206,68 @@ class SteelOptimizerV3 {
   }
 
   /**
-   * [稳健版] 计算解决方案统计
-   * 基于物料守恒定律，确保数据绝对平衡
-   */
-  calculateSolutionStats(solution) {
-    let totalModuleMaterial = 0;
-    let totalDesignCutsLength = 0;
-    let totalWasteFromPlans = 0;
-    let totalModuleUsed = 0;
-    let totalPseudoRemainder = 0;
-    const usedModuleIds = new Set();
-    
-    console.log(`[新] 启动稳健的物料守恒统计方法`);
-
-    // 遍历所有切割计划，进行分类记账
-    solution.cuttingPlans.forEach(plan => {
-      // 1. 累加总投入：只计算模数钢材的投入
-      if (plan.sourceType === 'module' && plan.sourceId) {
-        if (!usedModuleIds.has(plan.sourceId)) {
-          totalModuleMaterial += plan.sourceLength;
-          usedModuleIds.add(plan.sourceId);
-        }
-      }
-
-      // 2. 累加总产出（成品）
-      plan.cuts.forEach(cut => {
-        totalDesignCutsLength += cut.length * cut.quantity;
-      });
-
-      // 3. 累加总废料
-      totalWasteFromPlans += plan.waste || 0;
-      
-      // 4. (调试用) 累加伪余料：伪余料代表被消耗的余料，其长度等于使用余料的切割计划的源长度
-      if (plan.sourceType === 'remainder') {
-          totalPseudoRemainder += plan.sourceLength;
-      }
-    });
-
-    totalModuleUsed = usedModuleIds.size;
-
-    // 4. 计算真余料：这是唯一会产生误差的地方，我们通过守恒定律反向计算
-    const totalRealRemainder = totalModuleMaterial - totalDesignCutsLength - totalWasteFromPlans;
-
-    // 数据验证
-    if (totalRealRemainder < -1) { // 允许微小的浮点误差
-      console.error(`❌ 数据完整性严重错误！真余料为负数: ${totalRealRemainder}`);
-      console.error(`   投入: ${totalModuleMaterial}, 成品: ${totalDesignCutsLength}, 废料: ${totalWasteFromPlans}`);
-    }
-
-    // 设置最终的、绝对准确的统计数据
-    solution.totalModuleUsed = totalModuleUsed;
-    solution.totalMaterial = totalModuleMaterial; 
-    solution.totalWaste = totalWasteFromPlans;
-    solution.totalRealRemainder = Math.max(0, totalRealRemainder); // 确保不为负
-    solution.totalPseudoRemainder = totalPseudoRemainder;
-
-    console.log(`[新] 统计完成: 模数钢材 ${totalModuleUsed} 根 (${totalModuleMaterial}mm), 废料 ${totalWasteFromPlans}mm, 真余料 ${solution.totalRealRemainder}mm`);
-  }
-
-  /**
-   * 🔧 计算全局统计信息
-   */
-  calculateGlobalStats(solutions) {
-    console.log('🔧 开始计算全局统计信息...');
-    
-    let totalModuleUsed = 0;
-    let totalWaste = 0;
-    let totalPseudoRemainder = 0;
-    let totalRealRemainder = 0;
-    let totalMaterial = 0;
-    let totalCuts = 0;
-    let totalWeldingOperations = 0;
-    
-    // 🔧 修复：直接、简单地累加各个分组的准确统计数据
-    Object.entries(solutions).forEach(([groupKey, solution]) => {
-      totalModuleUsed += solution.totalModuleUsed || 0;
-      totalWaste += solution.totalWaste || 0;
-      totalPseudoRemainder += solution.totalPseudoRemainder || 0;
-      totalRealRemainder += solution.totalRealRemainder || 0;
-      totalMaterial += solution.totalMaterial || 0;
-      totalCuts += solution.totalCuts || 0;
-      totalWeldingOperations += solution.totalWeldingOperations || 0;
-    });
-    
-    // 🔧 修复：使用LossRateCalculator确保统计口径一致
-    const totalLossRate = this.lossRateCalculator.calculateTotalLossRate(solutions);
-    
-    const globalStats = {
-      totalModuleUsed,
-      totalWaste,
-      totalPseudoRemainder,
-      totalRealRemainder,
-      totalMaterial,
-      totalCuts,
-      totalWeldingOperations,
-      lossRate: totalLossRate,
-      efficiency: totalMaterial > 0 ? ((totalMaterial - totalWaste - totalRealRemainder) / totalMaterial) * 100 : 0
-    };
-    
-    // 最终数据汇总日志
-    console.log(`🎯 全局统计汇总:`);
-    console.log(`  - 模数钢材: ${totalModuleUsed}根`);
-    console.log(`  - 模数钢材总长度: ${totalMaterial}mm`);
-    console.log(`  - 废料: ${totalWaste}mm`);
-    console.log(`  - 真余料: ${totalRealRemainder}mm`);
-    console.log(`  - 损耗率: ${totalLossRate.toFixed(2)}%`);
-    console.log(`  - 材料利用率: ${globalStats.efficiency.toFixed(2)}%`);
-    console.log(`  - 总切割次数: ${totalCuts}次`);
-    console.log(`  - 焊接操作: ${totalWeldingOperations}次`);
-    
-    return globalStats;
-  }
-
-  /**
    * 构建最终优化结果
+   * 使用统一的StatisticsCalculator确保数据一致性
    */
   buildOptimizationResult(solutions, validation) {
     const endTime = Date.now();
     const executionTime = endTime - this.startTime;
     
-    console.log('🔧 开始构建最终优化结果...');
+    console.log('🏗️ 使用统一StatisticsCalculator构建最终优化结果...');
     
-    // 🔧 确保前端渲染在后端完全处理完成后进行
+    // 🎯 关键修复：使用统一的ResultBuilder构建完整结果，传入remainderManager
+    const completeResult = this.resultBuilder.buildCompleteResult(
+      solutions, 
+      this.designSteels, 
+      this.moduleSteels,
+      this.remainderManager, // 新增：传入余料管理器
+      executionTime
+    );
+    
+    // 🔧 保持向后兼容：创建原有的OptimizationResult结构
     const optimizationResult = new OptimizationResult({
       solutions: solutions,
-      totalExecutionTime: executionTime,
+      totalModuleUsed: completeResult.totalModuleUsed,
+      totalMaterial: completeResult.totalMaterial,
+      totalWaste: completeResult.totalWaste,
+      totalRealRemainder: completeResult.totalRealRemainder,
+      totalPseudoRemainder: completeResult.totalPseudoRemainder,
+      totalLossRate: completeResult.totalLossRate,
+      executionTime: executionTime,
       timestamp: new Date().toISOString(),
       version: '3.0',
       constraintValidation: validation,
-      // 🔧 关键：添加优化完成状态标记
+      
+      // 🔧 新增：完整的统计数据，前端直接使用
+      completeStats: completeResult.completeStats,
+      
+      // 🔧 添加优化完成状态标记
       processingStatus: {
         isCompleted: true,
         remaindersFinalized: true,
         readyForRendering: true,
-        completedAt: new Date().toISOString()
+        completedAt: new Date().toISOString(),
+        dataConsistencyChecked: completeResult.completeStats.consistencyCheck.isConsistent
       }
     });
 
-    // 🔧 计算全局统计信息
-    const globalStats = this.calculateGlobalStats(solutions);
-    optimizationResult.globalStats = globalStats;
-    
-    // 🔧 收集模数钢材使用统计
+    // 🔧 保持兼容：添加原有的附加数据
     const moduleSteelStats = this.collectModuleSteelUsageStats();
     optimizationResult.moduleSteelUsage = moduleSteelStats;
     
-    // 🔧 收集数据库记录
     const databaseRecords = this.collectDatabaseRecords();
     optimizationResult.databaseRecords = databaseRecords;
     
-    console.log('✅ 最终优化结果构建完成，数据已准备好供前端渲染');
-    console.log(`📊 全局统计: 损耗率 ${globalStats.lossRate.toFixed(2)}%, 执行时间 ${executionTime}ms`);
+    console.log('✅ 统一StatisticsCalculator构建完成，数据一致性已验证');
+    console.log(`📊 全局统计: 模数钢材${completeResult.totalModuleUsed}根, 损耗率${completeResult.totalLossRate}%, 执行时间${executionTime}ms`);
+    
+    // 🔧 数据一致性警告
+    if (!completeResult.completeStats.consistencyCheck.isConsistent) {
+      console.warn('⚠️ 数据一致性检查失败，请检查算法逻辑');
+      completeResult.completeStats.consistencyCheck.errors.forEach(error => {
+        console.warn(`   - ${error}`);
+      });
+    }
     
     return optimizationResult;
   }
@@ -1474,10 +1360,11 @@ class SteelOptimizerV3 {
  * V3规格化模数钢材池 - 支持动态生成和数据库集成
  */
 class SpecificationModuleSteelPool {
-  constructor(specification, crossSection, availableLengths = [12000, 10000, 8000, 6000]) {
+  constructor(specification, crossSection, availableLengths = null) {
+    // 🔧 修复：使用约束配置中心的默认模数钢材长度，消除硬编码
+    this.availableLengths = (availableLengths || constraintManager.getDefaultModuleLengths()).sort((a, b) => a - b); // 🔧 修复：改为升序排列
     this.specification = specification;
     this.crossSection = crossSection;
-    this.availableLengths = availableLengths.sort((a, b) => a - b); // 🔧 修复：改为升序排列
     this.usedSteels = []; // 记录实际使用的钢材（用于数据库存储）
     this.counter = 0;     // 钢材编号计数器
   }
@@ -1525,34 +1412,31 @@ class SpecificationModuleSteelPool {
     });
     
     console.log(`🔧 动态生成模数钢材: ${steel.id} (${this.specification}, ${length}mm)`);
+    
     return steel;
   }
 
   /**
-   * 获取使用统计（按根数）
+   * 获取使用统计
    */
   getUsageStats() {
     const stats = {};
     this.usedSteels.forEach(steel => {
-      const key = `${steel.length}mm`;
+      const key = steel.length;
       stats[key] = (stats[key] || 0) + 1;
     });
     return stats;
   }
 
   /**
-   * 获取用于数据库存储的数据
+   * 获取数据库记录
    */
   getDatabaseRecords() {
-    return this.usedSteels.map(steel => ({
-      ...steel,
-      poolSpecification: this.specification,
-      poolCrossSection: this.crossSection
-    }));
+    return [...this.usedSteels];
   }
 
   /**
-   * 清空使用记录（优化完成后调用）
+   * 重置池状态
    */
   reset() {
     this.usedSteels = [];
@@ -1560,4 +1444,4 @@ class SpecificationModuleSteelPool {
   }
 }
 
-module.exports = SteelOptimizerV3; 
+module.exports = SteelOptimizerV3;

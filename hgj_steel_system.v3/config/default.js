@@ -18,12 +18,13 @@ module.exports = {
 
   // 优化算法配置
   optimization: {
-    // 默认约束条件
+    // 🔧 修复：默认约束条件现在由约束配置中心统一管理
+    // 这里保留配置是为了向后兼容，实际使用时会优先使用约束配置中心
     defaultConstraints: {
-      wasteThreshold: 100,        // 废料阈值 (mm)
-      expectedLossRate: 5,        // 期望损耗率 (%)
-      timeLimit: 30000,           // 时间限制 (ms)
-      weldingSegments: 1          // 允许焊接段数W
+      wasteThreshold: 100,        // 废料阈值 (mm) - 与约束配置中心保持一致
+      expectedLossRate: 5,        // 期望损耗率 (%) - 与约束配置中心保持一致
+      timeLimit: 30000,           // 时间限制 (ms) - 与约束配置中心保持一致
+      weldingSegments: 1          // 允许焊接段数W - 与约束配置中心保持一致
     },
     
     // 算法参数
@@ -54,7 +55,6 @@ module.exports = {
     // 余料分类参数
     classification: {
       wasteSizeThreshold: 100,    // 废料尺寸阈值 (mm)
-      reusePriorityWeight: 0.8,   // 重用优先级权重
       lengthDecayFactor: 0.9      // 长度衰减因子
     }
   },

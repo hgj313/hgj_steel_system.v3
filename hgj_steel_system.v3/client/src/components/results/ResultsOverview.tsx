@@ -41,7 +41,7 @@ const ResultsOverview: React.FC<ResultsOverviewProps> = ({
 
       {/* V3规格化关键指标 */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col span={6}>
+        <Col span={8}>
           <Card>
             <Statistic
               title="总模数钢材用量"
@@ -54,7 +54,7 @@ const ResultsOverview: React.FC<ResultsOverviewProps> = ({
             </Text>
           </Card>
         </Col>
-        <Col span={6}>
+        <Col span={8}>
           <Card>
             <Statistic
               title="平均损耗率"
@@ -64,30 +64,26 @@ const ResultsOverview: React.FC<ResultsOverviewProps> = ({
               valueStyle={{ color: totalStats.overallLossRate > 10 ? '#cf1322' : '#52c41a' }}
             />
             <Text type="secondary">
-              {formatNumber(totalStats.totalRealRemainder + totalStats.totalWaste, 0)}mm
+              损耗计算依据
             </Text>
           </Card>
         </Col>
-        <Col span={6}>
+        <Col span={8}>
           <Card>
             <Statistic
-              title="总伪余料"
-              value={totalStats.totalPseudoRemainder}
+              title="总损耗"
+              value={totalStats.totalRealRemainder + totalStats.totalWaste}
               suffix="mm"
-              valueStyle={{ color: '#722ed1' }}
+              valueStyle={{ color: '#cf1322' }}
             />
-            <Text type="secondary">已被重复利用</Text>
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="总真余料"
-              value={totalStats.totalRealRemainder}
-              suffix="mm"
-              valueStyle={{ color: '#fa8c16' }}
-            />
-            <Text type="secondary">可供后续使用</Text>
+            <div style={{ marginTop: 8, lineHeight: '1.5' }}>
+              <Text type="secondary" style={{ display: 'block' }}>
+                真余料: {formatNumber(totalStats.totalRealRemainder, 0)}mm
+              </Text>
+              <Text type="secondary" style={{ display: 'block' }}>
+                废料: {formatNumber(totalStats.totalWaste, 0)}mm
+              </Text>
+            </div>
           </Card>
         </Col>
       </Row>

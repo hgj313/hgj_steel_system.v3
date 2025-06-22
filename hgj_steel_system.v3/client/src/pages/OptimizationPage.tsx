@@ -38,6 +38,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 // import type { UploadProps, UploadFile } from 'antd/es/upload/interface';
 import { useOptimizationContext, DesignSteel, ModuleSteel } from '../contexts/OptimizationContext';
+import { DEFAULT_CONSTRAINTS } from '../types';
 import { useNavigate } from 'react-router-dom';
 
 const { Title, Text } = Typography;
@@ -419,12 +420,8 @@ const OptimizationPage: React.FC = () => {
       okText: '确定',
       cancelText: '取消',
       onOk() {
-        setConstraints({
-          wasteThreshold: 100,
-          targetLossRate: 5,
-          timeLimit: 30,
-          maxWeldingSegments: 1
-        });
+        // 🔧 修复：使用统一的默认约束配置，消除硬编码
+        setConstraints({ ...DEFAULT_CONSTRAINTS });
         message.success('约束条件已重置');
       },
     });
@@ -763,11 +760,11 @@ const OptimizationPage: React.FC = () => {
               <Card size="small" title="废料阈值 (mm)">
                 <InputNumber
                   value={constraints.wasteThreshold}
-                  onChange={(value) => handleConstraintChange('wasteThreshold', value || 100)}
+                  onChange={(value) => handleConstraintChange('wasteThreshold', value || DEFAULT_CONSTRAINTS.wasteThreshold)}
                   min={0}
                   max={1000}
                   style={{ width: '100%' }}
-                  placeholder="100"
+                  placeholder={DEFAULT_CONSTRAINTS.wasteThreshold.toString()}
                 />
                 <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: '4px' }}>
                   {getConstraintDescription('wasteThreshold')}
@@ -779,12 +776,12 @@ const OptimizationPage: React.FC = () => {
               <Card size="small" title="目标损耗率 (%)">
                 <InputNumber
                   value={constraints.targetLossRate}
-                  onChange={(value) => handleConstraintChange('targetLossRate', value || 5)}
+                  onChange={(value) => handleConstraintChange('targetLossRate', value || DEFAULT_CONSTRAINTS.targetLossRate)}
                   min={0}
                   max={50}
                   step={0.1}
                   style={{ width: '100%' }}
-                  placeholder="5"
+                  placeholder={DEFAULT_CONSTRAINTS.targetLossRate.toString()}
                 />
                 <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: '4px' }}>
                   {getConstraintDescription('targetLossRate')}
@@ -796,11 +793,11 @@ const OptimizationPage: React.FC = () => {
               <Card size="small" title="计算时间限制 (秒)">
                 <InputNumber
                   value={constraints.timeLimit}
-                  onChange={(value) => handleConstraintChange('timeLimit', value || 30)}
+                  onChange={(value) => handleConstraintChange('timeLimit', value || DEFAULT_CONSTRAINTS.timeLimit)}
                   min={1}
                   max={300}
                   style={{ width: '100%' }}
-                  placeholder="30"
+                  placeholder={DEFAULT_CONSTRAINTS.timeLimit.toString()}
                 />
                 <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: '4px' }}>
                   {getConstraintDescription('timeLimit')}
@@ -817,11 +814,11 @@ const OptimizationPage: React.FC = () => {
               }>
                 <InputNumber
                   value={constraints.maxWeldingSegments}
-                  onChange={(value) => handleConstraintChange('maxWeldingSegments', value || 1)}
+                  onChange={(value) => handleConstraintChange('maxWeldingSegments', value || DEFAULT_CONSTRAINTS.maxWeldingSegments)}
                   min={1}
                   max={10}
                   style={{ width: '100%' }}
-                  placeholder="1"
+                  placeholder={DEFAULT_CONSTRAINTS.maxWeldingSegments.toString()}
                 />
                 <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: '4px' }}>
                   {getConstraintDescription('maxWeldingSegments')}

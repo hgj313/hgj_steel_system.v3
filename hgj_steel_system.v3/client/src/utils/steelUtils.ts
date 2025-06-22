@@ -119,19 +119,6 @@ export const groupBySpecification = (steels: DesignSteel[]): Record<string, Desi
   return groups;
 };
 
-// 按截面面积分组（保留用于兼容，但不推荐使用）
-export const groupByCrossSection = (steels: DesignSteel[]): Record<number, DesignSteel[]> => {
-  const groups: Record<number, DesignSteel[]> = {};
-  steels.forEach(steel => {
-    const roundedCrossSection = Math.round(steel.crossSection);
-    if (!groups[roundedCrossSection]) {
-      groups[roundedCrossSection] = [];
-    }
-    groups[roundedCrossSection].push(steel);
-  });
-  return groups;
-};
-
 // V3规格化统计 - 按规格计算实际使用情况
 export const calculateActualUsageBySpecification = (
   designSteels: DesignSteel[], 
@@ -230,23 +217,6 @@ export const buildSpecificationMapping = (steels: DesignSteel[]): Record<string,
   return mapping;
 };
 
-// 废弃的函数（V2兼容，不推荐使用）
-export const buildCrossSectionToSpecMapping = (steels: DesignSteel[]): Record<number, string> => {
-  console.warn('⚠️ buildCrossSectionToSpecMapping 是V2妥协方案，V3推荐直接使用规格分组');
-  const mapping: Record<number, string> = {};
-  
-  steels.forEach(steel => {
-    if (steel.specification && steel.specification.trim() && steel.crossSection) {
-      const roundedCrossSection = Math.round(steel.crossSection);
-      if (!mapping[roundedCrossSection]) {
-        mapping[roundedCrossSection] = steel.specification.trim();
-      }
-    }
-  });
-  
-  return mapping;
-};
-
 // 计算总体实际使用情况（简化版本，推荐使用calculateActualUsageBySpecification）
 export const calculateActualUsage = (
   designSteels: DesignSteel[], 
@@ -275,4 +245,27 @@ export const calculateActualUsage = (
     actualLossRate,
     totalDesignLength
   };
+};
+
+/**
+ * 根据设计钢材列表和总损耗率计算总采购金额
+ * @param designSteels 设计钢材列表
+ * @param totalLossRate 总损耗率
+ * @returns 总采购金额
+ */
+export const calculateTotalPurchaseAmount = (
+  designSteels: DesignSteel[],
+  totalLossRate: number
+): number => {
+  const totalAmount = calculateTotalVolume(designSteels);
+  return totalAmount * (1 + totalLossRate / 100);
+};
+
+/**
+ * 格式化数字为千分位
+ * @param num 数字
+ * @returns 格式化后的字符串
+ */
+export const formatNumberToThousands = (num: number): string => {
+  return num.toString().replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1,');
 }; 

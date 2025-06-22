@@ -4,6 +4,7 @@
  */
 
 const { OptimizationConstraints } = require('../../api/types');
+const constraintManager = require('../config/ConstraintManager');
 
 class ConstraintValidator {
   constructor() {
@@ -60,22 +61,24 @@ class ConstraintValidator {
    */
   validateBasicConstraints(constraints) {
     const violations = [];
+    const defaults = constraintManager.getDefaultConstraints();
+    const validationLimits = constraintManager.getValidationLimits();
 
     if (constraints.wasteThreshold <= 0) {
       violations.push({
         type: 'wasteThreshold',
         message: '废料阈值必须大于0',
         current: constraints.wasteThreshold,
-        suggested: 100
+        suggested: defaults.wasteThreshold
       });
     }
 
-    if (constraints.targetLossRate < 0 || constraints.targetLossRate > 50) {
+    if (constraints.targetLossRate < 0 || constraints.targetLossRate > validationLimits.targetLossRate.max) {
       violations.push({
         type: 'targetLossRate',
-        message: '目标损耗率必须在0-50%之间',
+        message: `目标损耗率必须在0-${validationLimits.targetLossRate.max}%之间`,
         current: constraints.targetLossRate,
-        suggested: 5
+        suggested: defaults.targetLossRate
       });
     }
 
@@ -84,7 +87,7 @@ class ConstraintValidator {
         type: 'timeLimit',
         message: '计算时间限制必须大于0',
         current: constraints.timeLimit,
-        suggested: 30000
+        suggested: defaults.timeLimit
       });
     }
 
@@ -93,7 +96,7 @@ class ConstraintValidator {
         type: 'maxWeldingSegments',
         message: '最大焊接段数必须≥1',
         current: constraints.maxWeldingSegments,
-        suggested: 1
+        suggested: defaults.maxWeldingSegments
       });
     }
 
@@ -324,7 +327,8 @@ class ConstraintValidator {
    * 生成推荐的模数钢材长度
    */
   generateRecommendedLengths(requiredLength) {
-    const standardLengths = [6000, 9000, 12000, 15000, 18000];
+    // 🔧 修复：使用约束配置中心的标准长度，消除硬编码
+    const standardLengths = constraintManager.getStandardSteelLengths();
     const recommended = [];
 
     // 添加刚好满足要求的长度

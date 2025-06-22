@@ -98,7 +98,7 @@ export const useOptimizationResults = (
     return map;
   }, [designSteelsWithIds]);
 
-  // 权威统计数据 - 直接来自后端，不重新计算
+  // 🔧 修复：直接使用后端ResultBuilder计算的完整统计数据
   const totalStats = useMemo((): TotalStats => {
     if (!results) {
       return {
@@ -111,24 +111,46 @@ export const useOptimizationResults = (
       };
     }
 
-    // ⚠️ 关键：直接使用后端计算的权威数据，避免前端重复计算
-    const overallLossRate = results.totalMaterial > 0 
-      ? ((results.totalRealRemainder + results.totalWaste) / results.totalMaterial) * 100 
-      : 0;
+    // ✅ 关键修复：优先使用completeStats中的预计算数据
+    if (results.completeStats?.global) {
+      const globalStats = results.completeStats.global;
+      return {
+        totalModuleCount: globalStats.totalModuleCount,
+        totalModuleLength: globalStats.totalModuleLength,
+        totalWaste: globalStats.totalWaste,
+        totalRealRemainder: globalStats.totalRealRemainder,
+        totalPseudoRemainder: globalStats.totalPseudoRemainder,
+        overallLossRate: globalStats.overallLossRate,
+      };
+    }
 
+    // 🔄 兼容性保证：如果新数据结构不存在，使用原有字段
+    console.warn('⚠️ 使用兼容模式：completeStats不存在，使用原有字段');
     return {
       totalModuleCount: results.totalModuleUsed || 0,
       totalModuleLength: results.totalMaterial || 0,
       totalWaste: results.totalWaste || 0,
       totalRealRemainder: results.totalRealRemainder || 0,
       totalPseudoRemainder: results.totalPseudoRemainder || 0,
-      overallLossRate: parseFloat(overallLossRate.toFixed(2)),
+      overallLossRate: results.totalLossRate || 0,
     };
   }, [results]);
 
-  // 图表数据处理
+  // 🔧 修复：图表数据直接使用后端预计算结果
   const chartData = useMemo((): ChartData => {
-    if (!results?.solutions) {
+    if (!results) {
+      return { lossRateData: [], pieData: [] };
+    }
+
+    // ✅ 优先使用completeStats中的预计算图表数据
+    if (results.completeStats?.chartData) {
+      return results.completeStats.chartData;
+    }
+
+    // 🔄 兼容性保证：如果新数据结构不存在，保持原有逻辑
+    console.warn('⚠️ 图表数据兼容模式：completeStats.chartData不存在，使用原有计算逻辑');
+    
+    if (!results.solutions) {
       return { lossRateData: [], pieData: [] };
     }
 
@@ -140,12 +162,9 @@ export const useOptimizationResults = (
       const [specification, crossSectionStr] = groupKey.split('_');
       const displayName = `${specification}(${crossSectionStr}mm²)`;
       
-      // ⚠️ 使用solution中的统计数据，保持一致性
-      const totalMaterial = solution.cuttingPlans?.reduce((sum: number, plan: any) => {
-        return sum + (plan.sourceType === 'module' ? plan.sourceLength : 0);
-      }, 0) || 0;
-      
-      const lossRate = totalMaterial > 0 ? ((solution.totalWaste + solution.totalRealRemainder) / totalMaterial) * 100 : 0;
+      const lossRate = (solution.totalMaterial || 0) > 0 
+        ? ((solution.totalWaste + solution.totalRealRemainder) / (solution.totalMaterial || 1)) * 100 
+        : 0;
       
       return {
         specification: displayName,
@@ -172,9 +191,19 @@ export const useOptimizationResults = (
     return { lossRateData, pieData };
   }, [results]);
 
-  // 需求验证数据处理
+  // 🔧 修复：需求验证数据直接使用后端预计算结果
   const requirementValidation = useMemo((): RequirementValidationItem[] => {
-    if (!results?.solutions) return [];
+    if (!results) return [];
+
+    // ✅ 优先使用completeStats中的预计算需求验证数据
+    if (results.completeStats?.requirementValidation?.items) {
+      return results.completeStats.requirementValidation.items;
+    }
+
+    // 🔄 兼容性保证：如果新数据结构不存在，保持原有逻辑
+    console.warn('⚠️ 需求验证兼容模式：completeStats.requirementValidation不存在，使用原有计算逻辑');
+    
+    if (!results.solutions) return [];
 
     return designSteelsWithIds.map(steel => {
       // 计算该设计钢材的实际生产数量
@@ -204,9 +233,9 @@ export const useOptimizationResults = (
     });
   }, [results, designSteelsWithIds]);
 
-  // 模数钢材统计数据处理
+  // 🔧 修复：模数钢材使用统计直接使用后端预计算结果
   const moduleUsageStats = useMemo(() => {
-    if (!results?.solutions) {
+    if (!results) {
       return { 
         sortedStats: [], 
         groupKeyTotals: {}, 
@@ -214,7 +243,61 @@ export const useOptimizationResults = (
       };
     }
 
-    // 按组合键统计模数钢材使用情况
+    // ✅ 优先使用completeStats中的预计算模数钢材统计
+    if (results.completeStats?.moduleUsageStats) {
+      const statsData = results.completeStats.moduleUsageStats;
+      
+      // 转换后端数据格式为前端需要的格式
+      const sortedStats: ModuleUsageItem[] = [];
+      const groupKeyTotals: Record<string, { count: number; totalLength: number }> = {};
+      
+      Object.entries(statsData.bySpecification).forEach(([groupKey, specData]: [string, any]) => {
+        const [specification, crossSectionStr] = groupKey.split('_');
+        const crossSection = parseInt(crossSectionStr);
+        
+        Object.entries(specData.moduleBreakdown).forEach(([lengthStr, moduleData]: [string, any]) => {
+          const length = parseInt(lengthStr);
+          sortedStats.push({
+            key: `${groupKey}_${length}`,
+            specification: specification,
+            length: length,
+            count: moduleData.count,
+            totalLength: moduleData.totalLength
+          });
+        });
+        
+        groupKeyTotals[groupKey] = specData.groupTotal;
+      });
+      
+      // 排序
+      sortedStats.sort((a, b) => {
+        if (a.specification !== b.specification) {
+          return a.specification.localeCompare(b.specification);
+        }
+        const lengthA = typeof a.length === 'number' ? a.length : parseInt(String(a.length), 10) || 0;
+        const lengthB = typeof b.length === 'number' ? b.length : parseInt(String(b.length), 10) || 0;
+        return lengthA - lengthB;
+      });
+      
+      return { 
+        sortedStats, 
+        groupKeyTotals, 
+        grandTotal: statsData.grandTotal 
+      };
+    }
+
+    // 🔄 兼容性保证：如果新数据结构不存在，保持原有逻辑
+    console.warn('⚠️ 模数钢材统计兼容模式：completeStats.moduleUsageStats不存在，使用原有计算逻辑');
+    
+    if (!results.solutions) {
+      return { 
+        sortedStats: [], 
+        groupKeyTotals: {}, 
+        grandTotal: { count: 0, totalLength: 0 } 
+      };
+    }
+
+    // 原有的复杂计算逻辑保持不变作为兼容性保证
     const moduleUsageStatsMap: Record<string, {
       groupKey: string;
       specification: string;
@@ -228,16 +311,13 @@ export const useOptimizationResults = (
       const [specification, crossSectionStr] = groupKey.split('_');
       const crossSection = parseInt(crossSectionStr);
       
-      // 统计唯一的模数钢材条数（按sourceId）
       const uniqueModuleBars: Record<string, { length: number; sourceId: string }> = {};
       
       (solution as any).details?.forEach((detail: any) => {
-        // 只统计原始模数钢材，忽略余料
         if (detail.sourceType === 'module' && detail.sourceId) {
           const length = detail.moduleLength || detail.sourceLength;
           const sourceId = detail.sourceId;
           
-          // 每个唯一的sourceId代表一根物理钢材
           if (!uniqueModuleBars[sourceId]) {
             uniqueModuleBars[sourceId] = {
               length: length,
@@ -247,7 +327,6 @@ export const useOptimizationResults = (
         }
       });
       
-      // 按长度分组并计算数量
       const moduleBarCounts: Record<number, number> = {};
       Object.values(uniqueModuleBars).forEach(bar => {
         if (!moduleBarCounts[bar.length]) {
@@ -256,7 +335,6 @@ export const useOptimizationResults = (
         moduleBarCounts[bar.length] += 1;
       });
       
-      // 添加到统计数据
       Object.entries(moduleBarCounts).forEach(([lengthStr, count]) => {
         const length = parseInt(lengthStr);
         const key = `${groupKey}_${length}`;
@@ -321,15 +399,32 @@ export const useOptimizationResults = (
     return regrouped;
   }, [results, designIdToDisplayIdMap]);
 
-  // 检查所有需求是否满足
+  // 🔧 修复：检查所有需求是否满足，优先使用后端预计算结果
   const isAllRequirementsSatisfied = useMemo(() => {
-    return requirementValidation.every(item => item.satisfied);
-  }, [requirementValidation]);
+    // ✅ 优先使用completeStats中的预计算结果
+    if (results?.completeStats?.requirementValidation?.summary?.allSatisfied !== undefined) {
+      return results.completeStats.requirementValidation.summary.allSatisfied;
+    }
 
-  // 错误检查
+    // 🔄 兼容性保证：使用前端计算结果
+    return requirementValidation.every(item => item.satisfied);
+  }, [results, requirementValidation]);
+
+  // 🔧 修复：错误检查，优先使用后端数据一致性检查结果
   const { hasDataError, errorMessage } = useMemo(() => {
     if (!results) {
       return { hasDataError: true, errorMessage: '暂无优化结果数据' };
+    }
+
+    // ✅ 优先检查后端数据一致性验证结果
+    if (results.completeStats?.consistencyCheck) {
+      const consistencyCheck = results.completeStats.consistencyCheck;
+      if (!consistencyCheck.isConsistent) {
+        return { 
+          hasDataError: true, 
+          errorMessage: `数据一致性检查失败: ${consistencyCheck.errors.join('; ')}` 
+        };
+      }
     }
 
     if (!results.solutions || Object.keys(results.solutions).length === 0) {
