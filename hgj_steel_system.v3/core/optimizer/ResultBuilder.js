@@ -27,6 +27,9 @@ class ResultBuilder {
       const specStats = specificationStats[groupKey];
       if (specStats) {
         solution.totalMaterial = specStats.totalMaterial;
+        solution.totalRealRemainder = specStats.realRemainder;
+        solution.totalWaste = specStats.waste;
+        solution.lossRate = specStats.lossRate;
         console.log(`🔧 设置 ${groupKey} 的 totalMaterial: ${specStats.totalMaterial}mm`);
       }
     });

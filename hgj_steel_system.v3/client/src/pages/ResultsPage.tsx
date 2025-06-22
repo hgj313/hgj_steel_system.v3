@@ -135,13 +135,7 @@ const ResultsPage: React.FC = () => {
     <div style={{ padding: '24px' }}>
       <Title level={2}>V3规格化优化结果分析</Title>
 
-      {/* 顶部需求满足提示条 */}
-      <Alert
-        type={processedResults.isAllRequirementsSatisfied ? 'success' : 'warning'}
-        message={processedResults.isAllRequirementsSatisfied ? '所有需求已满足' : '部分需求未满足'}
-        showIcon
-        style={{ marginBottom: 16, fontWeight: 500 }}
-      />
+      {/* 顶部需求满足提示条已由父级统一显示，避免重复 */}
       
       <Tabs activeKey={activeTab} onChange={setActiveTab}>
         <TabPane tab="概览图表" key="overview">

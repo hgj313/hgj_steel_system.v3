@@ -181,18 +181,23 @@ const CuttingPlansTable: React.FC<CuttingPlansTableProps> = ({
     <>
       <Alert
         type="info"
-        message="V3规格化切割方案"
-        description="直接按规格组织切割方案，无需截面面积映射转换，更符合实际生产管理需求。"
+        message="余料概念说明"
+        description={
+          <div style={{ lineHeight: 1.8 }}>
+            • 伪余料：还在加工流程里，下一刀可能就用掉<br/>
+            • 真余料：最终剩下的合格边料，可以收回仓库下次用（纳入单次项目损耗）<br/>
+            • 废料：太短的边角料，只能当废料处理
+          </div>
+        }
         style={{ marginBottom: 16 }}
         showIcon
       />
       
       {Object.entries(regroupedResults).map(([specification, solution]: [string, any]) => {
-        // 重新计算分组损耗率（只用真余料+废料，分母为模数钢材实际用量）
-        const totalMaterial = solution.cuttingPlans?.reduce((sum: number, plan: any) => 
-          sum + (plan.sourceType === 'module' ? plan.sourceLength : 0), 0) || 0;
-        const groupLossRate = totalMaterial > 0 ? 
-          ((solution.totalRealRemainder + solution.totalWaste) / totalMaterial) * 100 : 0;
+        console.log('检查 solution:', { specification, solution });
+        // 分组损耗率直接使用后端统计的 totalMaterial，避免前端重复计算
+        const totalMaterial = solution.totalMaterial || 0;
+        const groupLossRate = solution.lossRate ?? 0;
           
         return (
           <Collapse key={specification} style={{ marginBottom: 16 }}>
@@ -203,13 +208,7 @@ const CuttingPlansTable: React.FC<CuttingPlansTableProps> = ({
                     {specification}
                   </Tag>
                   <Text>
-                    真实损耗率: {totalMaterial > 0 ? groupLossRate.toFixed(2) : 0}%
-                  </Text>
-                  <Text type="secondary">
-                    真余料: {formatNumber(solution.totalRealRemainder || 0, 0)}mm
-                  </Text>
-                  <Text type="secondary">
-                    废料: {formatNumber(solution.totalWaste || 0, 0)}mm
+                    真实损耗率: {groupLossRate.toFixed(2)}%
                   </Text>
                 </div>
               }
@@ -231,17 +230,6 @@ const CuttingPlansTable: React.FC<CuttingPlansTableProps> = ({
                 title={() => (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Text strong>切割计划明细</Text>
-                    <Space>
-                      <Text type="secondary">
-                        废料: {formatNumber(solution.totalWaste || 0, 0)}mm
-                      </Text>
-                      <Text type="secondary">
-                        新余料: {formatNumber(
-                          solution.cuttingPlans?.reduce((sum: number, p: any) => 
-                            sum + (p.newRemainders?.filter((r:any) => r.type !== 'waste').reduce((s: number, r: any) => s + r.length, 0) || 0), 0) || 0, 0
-                        )}mm
-                      </Text>
-                    </Space>
                   </div>
                 )}
               />
