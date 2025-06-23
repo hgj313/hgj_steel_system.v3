@@ -1,0 +1,125 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>钢材优化结果报告</title>
+  <style>
+    body { font-family: 'SimSun', Arial, sans-serif; margin: 20px; color: #333; line-height: 1.6; }
+    .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+    .header h1 { color: #1890ff; margin: 0; font-size: 28px; }
+    .section { margin-bottom: 30px; page-break-inside: avoid; }
+    .section h2 { color: #1890ff; border-bottom: 1px solid #1890ff; padding-bottom: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 14px; }
+    th { background-color: #f5f5f5; font-weight: bold; }
+    .summary { background-color: #f9f9f9; padding: 15px; border-radius: 5px; }
+    .tag { background-color: #1890ff; color: white; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+    .total-row { background-color: #e6f7ff; font-weight: bold; color: #1890ff; }
+    .highlight { background-color: #fff2e8; }
+    @media print {
+      body { margin: 10px; }
+      .section { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>钢材优化结果报告</h1>
+    <div>生成时间: 2025/6/23 14:47:42</div>
+    <div style="margin-top: 10px; font-size: 14px; color: #666;">
+      钢材采购优化系统 V3.0 - 技术报告
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>优化结果汇总</h2>
+    <div class="summary">
+      <table>
+        <tr><td><strong>总损耗率</strong></td><td class="highlight">3.45%</td></tr>
+        <tr><td><strong>材料利用率</strong></td><td class="highlight">96.55%</td></tr>
+        <tr><td><strong>模数钢材使用量</strong></td><td>40 根</td></tr>
+        <tr><td><strong>总材料长度</strong></td><td>480,000 mm</td></tr>
+        <tr><td><strong>总废料长度</strong></td><td>16,560 mm</td></tr>
+        <tr><td><strong>总余料长度</strong></td><td>0 mm</td></tr>
+        <tr><td><strong>优化执行时间</strong></td><td>123 ms</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>模数钢材采购清单</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>钢材规格</th>
+          <th>单根长度 (mm)</th>
+          <th>采购数量 (根)</th>
+          <th>总长度 (mm)</th>
+          <th>截面面积 (mm²)</th>
+          <th>采购建议</th>
+        </tr>
+      </thead>
+      <tbody>
+        
+          <tr>
+            <td><span class="tag">[]150*5_12000</span></td>
+            <td>12,000</td>
+            <td><strong>1 根</strong></td>
+            <td><strong>12,000</strong></td>
+            <td>2,830</td>
+            <td>需采购 1 根钢材，每根长度 12,000mm</td>
+          </tr>
+        
+
+        
+        <tr class="total-row">
+          <td>总计</td>
+          <td>-</td>
+          <td><strong>1 根</strong></td>
+          <td><strong>12,000</strong></td>
+          <td>-</td>
+          <td>总采购成本预估</td>
+        </tr>
+        
+      </tbody>
+    </table>
+  </div>
+
+  
+
+  <div class="section">
+    <h2>技术说明</h2>
+    <ul>
+      <li><strong>优化算法</strong>：采用V3.0并行优化算法，支持余料重用和智能切割</li>
+      <li><strong>损耗率计算</strong>：损耗率 = 废料长度 / 总材料长度 × 100%</li>
+      <li><strong>材料利用率</strong>：材料利用率 = 100% - 损耗率</li>
+      <li><strong>余料管理</strong>：系统自动管理余料重用，提高材料利用率</li>
+      <li><strong>采购优化</strong>：采购数量已考虑切割优化，每根钢材可切割多个设计件</li>
+      <li><strong>质量保证</strong>：所有计算结果经过数据一致性验证</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>使用指南</h2>
+    <div style="background-color: #f0f8ff; padding: 15px; border-left: 4px solid #1890ff; margin: 10px 0;">
+      <strong>📄 PDF转换说明：</strong><br>
+      1. 在浏览器中打开此HTML文件<br>
+      2. 使用浏览器的"打印"功能（Ctrl+P）<br>
+      3. 选择"另存为PDF"或"打印到PDF"<br>
+      4. 调整页面设置以获得最佳打印效果
+    </div>
+    <div style="background-color: #fff7e6; padding: 15px; border-left: 4px solid #faad14; margin: 10px 0;">
+      <strong>📋 报告用途：</strong><br>
+      • 生产计划制定参考<br>
+      • 材料采购指导文档<br>
+      • 成本核算依据<br>
+      • 工艺优化分析报告
+    </div>
+  </div>
+
+  <div style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px;">
+    报告生成时间: 2025/6/23 14:47:42 | 钢材采购优化系统 V3.0
+  </div>
+</body>
+</html>

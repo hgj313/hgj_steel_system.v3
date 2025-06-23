@@ -88,33 +88,11 @@ const ResultsOverview: React.FC<ResultsOverviewProps> = ({
         </Col>
       </Row>
 
-      {/* V3规格化说明 */}
-      <Alert
-        type="success"
-        message="V3规格化设计优势"
-        description={
-          <div style={{ display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Tag color="green">直接按规格分类</Tag>
-              <Text type="secondary">摆脱V2的截面面积映射妥协方案</Text>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Tag color="blue">规格化编号</Tag>
-              <Text type="secondary">如HRB400-A1，更符合实际业务</Text>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Tag color="purple">真伪余料分离</Tag>
-              <Text type="secondary">精确的余料状态管理</Text>
-            </div>
-          </div>
-        }
-        style={{ marginBottom: 16 }}
-        showIcon
-      />
+      
 
       {/* 规格化图表 */}
-      <Row gutter={[16, 16]}>
-        <Col xs={24} lg={12}>
+      <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
+        <Col xs={24} lg={24}>
           <Card title="各规格损耗率分析" size="small">
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={chartData.lossRateData}>
@@ -125,29 +103,6 @@ const ResultsOverview: React.FC<ResultsOverviewProps> = ({
                 <Legend />
                 <Line type="monotone" dataKey="lossRate" stroke="#8884d8" name="损耗率 (%)" />
               </LineChart>
-            </ResponsiveContainer>
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card title="各规格钢材使用分布" size="small">
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={chartData.pieData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {chartData.pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.fill} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
             </ResponsiveContainer>
           </Card>
         </Col>

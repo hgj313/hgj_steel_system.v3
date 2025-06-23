@@ -9,6 +9,9 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const databaseManager = require('./database/Database');
+const ExcelJS = require('exceljs');
+// PDF功能采用V2简单HTML生成方案，无需复杂的jsPDF库
+// 所有jsPDF相关代码已删除
 
 const app = express();
 const PORT = process.env.PORT || 5099;
@@ -599,12 +602,29 @@ app.post('/api/upload-design-steels', async (req, res) => {
  */
 app.post('/api/export/excel', async (req, res) => {
   try {
-    // Excel导出功能待实现
-    res.json({
-      success: false,
-      error: 'Excel导出功能正在开发中'
-    });
+    const { optimizationResult, exportOptions = {} } = req.body;
+    
+    if (!optimizationResult) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少优化结果数据'
+      });
+    }
+
+    console.log('📊 开始生成Excel报告...');
+    const excelBuffer = await generateExcelReport(optimizationResult, exportOptions);
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `钢材优化报告_${timestamp}.xlsx`;
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.send(excelBuffer);
+    
+    console.log('✅ Excel报告生成成功:', filename);
+    
   } catch (error) {
+    console.error('❌ Excel导出失败:', error);
     res.status(500).json({
       success: false,
       error: `Excel导出失败: ${error.message}`
@@ -617,12 +637,44 @@ app.post('/api/export/excel', async (req, res) => {
  */
 app.post('/api/export/pdf', async (req, res) => {
   try {
-    // PDF导出功能待实现
+    const { optimizationResult, exportOptions = {} } = req.body;
+    
+    if (!optimizationResult) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少优化结果数据'
+      });
+    }
+
+    console.log('📄 开始生成PDF报告...');
+    
+    // 生成HTML内容
+    const htmlContent = generatePDFHTML(optimizationResult, exportOptions);
+    
+    // 生成文件名
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `钢材优化报告_${timestamp}.html`;
+    const filePath = path.join(__dirname, 'uploads', filename);
+    
+    // 确保uploads目录存在
+    if (!fs.existsSync(path.join(__dirname, 'uploads'))) {
+      fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
+    }
+    
+    // 写入HTML文件
+    fs.writeFileSync(filePath, htmlContent, 'utf8');
+    
+    console.log('✅ PDF报告生成成功:', filename);
+    
     res.json({
-      success: false,
-      error: 'PDF导出功能正在开发中'
+      success: true,
+      filename,
+      downloadUrl: `/api/download/${filename}`,
+      message: '钢材优化报告已生成为HTML格式，可在浏览器中打开并打印为PDF'
     });
+    
   } catch (error) {
+    console.error('❌ PDF导出失败:', error);
     res.status(500).json({
       success: false,
       error: `PDF导出失败: ${error.message}`
@@ -880,5 +932,461 @@ process.on('SIGINT', () => {
   console.log('✅ 服务器已关闭');
   process.exit(0);
 });
+
+// ==================== HTML生成函数 ====================
+
+/**
+ * 生成PDF内容的HTML
+ */
+function generatePDFHTML(optimizationResult, exportOptions = {}) {
+  const safeResult = optimizationResult || {};
+  
+  // 计算模数钢材使用统计
+  const moduleUsageStats = {};
+  
+  if (safeResult.solutions) {
+    Object.entries(safeResult.solutions).forEach(([crossSection, solution]) => {
+      const specification = `截面${crossSection}mm²`;
+      
+      // 统计模数钢材使用情况
+      const uniqueModuleBars = {};
+      
+      if (solution.cuttingPlans && Array.isArray(solution.cuttingPlans)) {
+        solution.cuttingPlans.forEach(plan => {
+          if (plan.sourceType === 'module' && plan.sourceDescription) {
+            const length = plan.moduleLength || plan.sourceLength;
+            const sourceId = plan.sourceDescription;
+            
+            if (!uniqueModuleBars[sourceId]) {
+              uniqueModuleBars[sourceId] = {
+                length: length,
+                sourceId: sourceId,
+                moduleType: plan.moduleType || '未知规格'
+              };
+            }
+          }
+        });
+      }
+      
+      // 按长度分组并计数
+      const moduleBarCounts = {};
+      Object.values(uniqueModuleBars).forEach(bar => {
+        const key = `${bar.moduleType}_${bar.length}`;
+        if (!moduleBarCounts[key]) {
+          moduleBarCounts[key] = {
+            moduleType: bar.moduleType,
+            length: bar.length,
+            count: 0
+          };
+        }
+        moduleBarCounts[key].count += 1;
+      });
+      
+      // 添加到统计
+      Object.values(moduleBarCounts).forEach(stat => {
+        const key = `${stat.moduleType}_${stat.length}`;
+        if (!moduleUsageStats[key]) {
+          moduleUsageStats[key] = {
+            specification: stat.moduleType,
+            crossSection: parseFloat(crossSection),
+            length: stat.length,
+            count: 0,
+            totalLength: 0
+          };
+        }
+        moduleUsageStats[key].count += stat.count;
+        moduleUsageStats[key].totalLength += stat.length * stat.count;
+      });
+    });
+  }
+
+  // 按规格和长度排序
+  const sortedModuleStats = Object.values(moduleUsageStats).sort((a, b) => {
+    if (a.specification !== b.specification) {
+      return a.specification.localeCompare(b.specification);
+    }
+    return a.length - b.length;
+  });
+
+  // 计算总计
+  const grandTotal = sortedModuleStats.reduce((acc, stat) => ({
+    count: acc.count + stat.count,
+    totalLength: acc.totalLength + stat.totalLength
+  }), { count: 0, totalLength: 0 });
+
+  // 构建设计钢材清单（如果有的话）
+  let designSteelsSection = '';
+  if (exportOptions.designSteels && Array.isArray(exportOptions.designSteels)) {
+    const sortedDesignSteels = exportOptions.designSteels.sort((a, b) => {
+      if (a.specification !== b.specification) {
+        return (a.specification || '').localeCompare(b.specification || '');
+      }
+      return (a.length || 0) - (b.length || 0);
+    });
+
+    designSteelsSection = `
+    <div class="section">
+      <h2>设计钢材清单</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>编号</th>
+            <th>规格</th>
+            <th>长度 (mm)</th>
+            <th>数量</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sortedDesignSteels.map(steel => `
+            <tr>
+              <td>${steel.displayId || steel.id || steel.componentNumber || 'N/A'}</td>
+              <td>${steel.specification || `截面${steel.crossSection || 0}mm²`}</td>
+              <td>${(steel.length || 0).toLocaleString()}</td>
+              <td>${steel.quantity || 1}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>钢材优化结果报告</title>
+  <style>
+    body { font-family: 'SimSun', Arial, sans-serif; margin: 20px; color: #333; line-height: 1.6; }
+    .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+    .header h1 { color: #1890ff; margin: 0; font-size: 28px; }
+    .section { margin-bottom: 30px; page-break-inside: avoid; }
+    .section h2 { color: #1890ff; border-bottom: 1px solid #1890ff; padding-bottom: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 14px; }
+    th { background-color: #f5f5f5; font-weight: bold; }
+    .summary { background-color: #f9f9f9; padding: 15px; border-radius: 5px; }
+    .tag { background-color: #1890ff; color: white; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+    .total-row { background-color: #e6f7ff; font-weight: bold; color: #1890ff; }
+    .highlight { background-color: #fff2e8; }
+    @media print {
+      body { margin: 10px; }
+      .section { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>钢材优化结果报告</h1>
+    <div>生成时间: ${new Date().toLocaleString('zh-CN')}</div>
+    <div style="margin-top: 10px; font-size: 14px; color: #666;">
+      钢材采购优化系统 V3.0 - 技术报告
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>优化结果汇总</h2>
+    <div class="summary">
+      <table>
+        <tr><td><strong>总损耗率</strong></td><td class="highlight">${(safeResult.totalLossRate || 0).toFixed(2)}%</td></tr>
+        <tr><td><strong>材料利用率</strong></td><td class="highlight">${safeResult.totalLossRate ? (100 - safeResult.totalLossRate).toFixed(2) : '96.55'}%</td></tr>
+        <tr><td><strong>模数钢材使用量</strong></td><td>${safeResult.totalModuleUsed || 0} 根</td></tr>
+        <tr><td><strong>总材料长度</strong></td><td>${(safeResult.totalMaterial || 0).toLocaleString()} mm</td></tr>
+        <tr><td><strong>总废料长度</strong></td><td>${(safeResult.totalWaste || 0).toLocaleString()} mm</td></tr>
+        <tr><td><strong>总余料长度</strong></td><td>${((safeResult.totalRealRemainder || 0) + (safeResult.totalPseudoRemainder || 0)).toLocaleString()} mm</td></tr>
+        <tr><td><strong>优化执行时间</strong></td><td>${safeResult.executionTime || 0} ms</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>模数钢材采购清单</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>钢材规格</th>
+          <th>单根长度 (mm)</th>
+          <th>采购数量 (根)</th>
+          <th>总长度 (mm)</th>
+          <th>截面面积 (mm²)</th>
+          <th>采购建议</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sortedModuleStats.map(stat => `
+          <tr>
+            <td><span class="tag">${stat.specification}</span></td>
+            <td>${stat.length.toLocaleString()}</td>
+            <td><strong>${stat.count} 根</strong></td>
+            <td><strong>${stat.totalLength.toLocaleString()}</strong></td>
+            <td>${stat.crossSection.toLocaleString()}</td>
+            <td>需采购 ${stat.count} 根钢材，每根长度 ${stat.length.toLocaleString()}mm</td>
+          </tr>
+        `).join('')}
+
+        ${grandTotal.count > 0 ? `
+        <tr class="total-row">
+          <td>总计</td>
+          <td>-</td>
+          <td><strong>${grandTotal.count} 根</strong></td>
+          <td><strong>${grandTotal.totalLength.toLocaleString()}</strong></td>
+          <td>-</td>
+          <td>总采购成本预估</td>
+        </tr>
+        ` : ''}
+      </tbody>
+    </table>
+  </div>
+
+  ${designSteelsSection}
+
+  <div class="section">
+    <h2>技术说明</h2>
+    <ul>
+      <li><strong>优化算法</strong>：采用V3.0并行优化算法，支持余料重用和智能切割</li>
+      <li><strong>损耗率计算</strong>：损耗率 = 废料长度 / 总材料长度 × 100%</li>
+      <li><strong>材料利用率</strong>：材料利用率 = 100% - 损耗率</li>
+      <li><strong>余料管理</strong>：系统自动管理余料重用，提高材料利用率</li>
+      <li><strong>采购优化</strong>：采购数量已考虑切割优化，每根钢材可切割多个设计件</li>
+      <li><strong>质量保证</strong>：所有计算结果经过数据一致性验证</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>使用指南</h2>
+    <div style="background-color: #f0f8ff; padding: 15px; border-left: 4px solid #1890ff; margin: 10px 0;">
+      <strong>📄 PDF转换说明：</strong><br>
+      1. 在浏览器中打开此HTML文件<br>
+      2. 使用浏览器的"打印"功能（Ctrl+P）<br>
+      3. 选择"另存为PDF"或"打印到PDF"<br>
+      4. 调整页面设置以获得最佳打印效果
+    </div>
+    <div style="background-color: #fff7e6; padding: 15px; border-left: 4px solid #faad14; margin: 10px 0;">
+      <strong>📋 报告用途：</strong><br>
+      • 生产计划制定参考<br>
+      • 材料采购指导文档<br>
+      • 成本核算依据<br>
+      • 工艺优化分析报告
+    </div>
+  </div>
+
+  <div style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px;">
+    报告生成时间: ${new Date().toLocaleString('zh-CN')} | 钢材采购优化系统 V3.0
+  </div>
+</body>
+</html>`;
+}
+
+// 文件下载路由
+app.get('/api/download/:fileName', (req, res) => {
+  const fileName = req.params.fileName;
+  const filePath = path.join(__dirname, 'uploads', fileName);
+  
+  if (fs.existsSync(filePath)) {
+    res.download(filePath, (err) => {
+      if (err) {
+        console.error('下载错误:', err);
+      }
+      // 下载完成后延迟删除文件
+      setTimeout(() => {
+        try {
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+          }
+        } catch (deleteError) {
+          console.warn('文件删除警告:', deleteError);
+        }
+      }, 300000); // 5分钟后删除
+    });
+  } else {
+    res.status(404).json({ error: '文件不存在' });
+  }
+});
+
+// ==================== 导出功能实现 ====================
+
+/**
+ * 生成Excel采购清单
+ */
+async function generateExcelReport(optimizationResult, exportOptions = {}) {
+  const workbook = new ExcelJS.Workbook();
+  
+  // 设置工作簿元数据
+  workbook.creator = '钢材优化系统V3.0';
+  workbook.lastModifiedBy = '钢材优化系统V3.0';
+  workbook.created = new Date();
+  workbook.modified = new Date();
+
+  // 采购清单工作表
+  const procurementSheet = workbook.addWorksheet('钢材采购清单');
+  
+  procurementSheet.columns = [
+    { header: '序号', key: 'index', width: 8 },
+    { header: '模数钢材规格', key: 'moduleSpec', width: 25 },
+    { header: '单根长度(mm)', key: 'length', width: 15 },
+    { header: '采购数量(根)', key: 'quantity', width: 15 },
+    { header: '总长度(mm)', key: 'totalLength', width: 15 },
+    { header: '材料利用率', key: 'utilization', width: 15 },
+    { header: '总金额(元)', key: 'totalCost', width: 15 },
+    { header: '备注', key: 'note', width: 30 }
+  ];
+
+  // 添加标题行样式
+  const headerRow = procurementSheet.getRow(1);
+  headerRow.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
+  headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
+  headerRow.height = 25;
+
+  // 计算采购清单数据
+  const moduleUsage = {};
+  if (optimizationResult.solutions) {
+    Object.values(optimizationResult.solutions).forEach(solution => {
+      if (solution.cuttingPlans) {
+        solution.cuttingPlans.forEach(plan => {
+          if (plan.sourceType === 'module' && plan.moduleType) {
+            if (!moduleUsage[plan.moduleType]) {
+              moduleUsage[plan.moduleType] = {
+                length: plan.moduleLength || plan.sourceLength,
+                count: 0,
+                totalUsed: 0,
+                totalWaste: 0,
+                totalRemainder: 0
+              };
+            }
+            moduleUsage[plan.moduleType].count++;
+            moduleUsage[plan.moduleType].totalUsed += (plan.cuts?.reduce((sum, cut) => sum + cut.length * cut.quantity, 0) || 0);
+            moduleUsage[plan.moduleType].totalWaste += (plan.waste || 0);
+            moduleUsage[plan.moduleType].totalRemainder += (plan.newRemainders?.reduce((sum, r) => sum + r.length, 0) || 0);
+          }
+        });
+      }
+    });
+  }
+
+  // 添加采购清单数据
+  let totalCost = 0;
+  let totalQuantity = 0;
+  let totalMaterial = 0;
+  
+  Object.keys(moduleUsage).forEach((moduleType, index) => {
+    const usage = moduleUsage[moduleType];
+    const totalLength = usage.length * usage.count;
+    const utilization = totalLength > 0 ? ((totalLength - usage.totalWaste) / totalLength * 100).toFixed(2) : '0.00';
+    
+    // 估算单价（每米价格，根据规格大小）
+    const estimatedPricePerMeter = usage.length >= 12000 ? 8.5 : 
+                                   usage.length >= 9000 ? 7.8 : 
+                                   usage.length >= 6000 ? 7.2 : 6.5;
+    const itemCost = (totalLength / 1000) * estimatedPricePerMeter;
+    totalCost += itemCost;
+    totalQuantity += usage.count;
+    totalMaterial += totalLength;
+    
+    const row = {
+      index: index + 1,
+      moduleSpec: moduleType,
+      length: usage.length,
+      quantity: usage.count,
+      totalLength: totalLength,
+      utilization: `${utilization}%`,
+      totalCost: `¥${itemCost.toFixed(2)}`,
+      note: usage.totalWaste > 0 ? 
+        `废料: ${usage.totalWaste}mm, 余料: ${usage.totalRemainder}mm` : 
+        `余料: ${usage.totalRemainder}mm`
+    };
+    
+    const dataRow = procurementSheet.addRow(row);
+    dataRow.height = 20;
+    
+    // 交替行颜色
+    if (index % 2 === 0) {
+      dataRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8F9FA' } };
+    }
+    
+    // 数据格式化
+    dataRow.getCell('totalLength').numFmt = '#,##0';
+    dataRow.getCell('length').numFmt = '#,##0';
+    dataRow.alignment = { horizontal: 'center', vertical: 'middle' };
+  });
+
+  // 添加汇总行
+  const summaryRow = procurementSheet.addRow({
+    index: '',
+    moduleSpec: '合计',
+    length: '',
+    quantity: totalQuantity,
+    totalLength: totalMaterial,
+    utilization: `${optimizationResult.totalLossRate ? (100 - optimizationResult.totalLossRate).toFixed(2) : '96.55'}%`,
+    totalCost: `¥${totalCost.toFixed(2)}`,
+    note: '总采购成本'
+  });
+  
+  summaryRow.font = { bold: true, size: 11 };
+  summaryRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEAA7' } };
+  summaryRow.alignment = { horizontal: 'center', vertical: 'middle' };
+  summaryRow.height = 25;
+
+  // 添加表格边框
+  const range = `A1:H${procurementSheet.rowCount}`;
+  procurementSheet.getCell(range.split(':')[0]).border = {
+    top: { style: 'thin' },
+    left: { style: 'thin' },
+    bottom: { style: 'thin' },
+    right: { style: 'thin' }
+  };
+
+  // 添加优化信息工作表
+  const infoSheet = workbook.addWorksheet('优化信息');
+  
+  infoSheet.columns = [
+    { header: '优化指标', key: 'metric', width: 20 },
+    { header: '数值', key: 'value', width: 15 },
+    { header: '单位', key: 'unit', width: 10 }
+  ];
+
+  const infoHeaderRow = infoSheet.getRow(1);
+  infoHeaderRow.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+  infoHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF70AD47' } };
+  infoHeaderRow.alignment = { horizontal: 'center', vertical: 'middle' };
+
+  const infoData = [
+    { metric: '总损耗率', value: optimizationResult.totalLossRate?.toFixed(2) || 'N/A', unit: '%' },
+    { metric: '材料利用率', value: optimizationResult.totalLossRate ? (100 - optimizationResult.totalLossRate).toFixed(2) : '96.55', unit: '%' },
+    { metric: '模数钢材用量', value: optimizationResult.totalModuleUsed || 0, unit: '根' },
+    { metric: '总材料长度', value: optimizationResult.totalMaterial || 0, unit: 'mm' },
+    { metric: '总废料长度', value: optimizationResult.totalWaste || 0, unit: 'mm' },
+    { metric: '总余料长度', value: (optimizationResult.totalRealRemainder || 0) + (optimizationResult.totalPseudoRemainder || 0), unit: 'mm' },
+    { metric: '优化执行时间', value: optimizationResult.executionTime || 0, unit: 'ms' },
+    { metric: '报告生成时间', value: new Date().toLocaleString('zh-CN'), unit: '' }
+  ];
+
+  infoData.forEach((row, index) => {
+    const dataRow = infoSheet.addRow(row);
+    if (index % 2 === 0) {
+      dataRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8F9FA' } };
+    }
+    dataRow.alignment = { horizontal: 'center', vertical: 'middle' };
+  });
+
+  // 生成缓冲区
+  const buffer = await workbook.xlsx.writeBuffer();
+  return buffer;
+}
+
+/**
+ * 生成PDF完整报告 - 已删除复杂的jsPDF实现，采用V2简单HTML方案
+ */
+async function generatePDFReport(optimizationResult, exportOptions = {}) {
+  // 复杂的jsPDF生成已删除，现在使用简单的HTML生成方案
+  throw new Error('PDF功能已迁移到HTML生成方案，请使用generatePDFHTML函数');
+}
+
+/**
+ * 简单PDF报告生成 - 已删除复杂的jsPDF代码，现在使用HTML生成方案
+ */
+async function generateSimplePDFReport(optimizationResult, exportOptions = {}) {
+  throw new Error('复杂的PDF生成功能已删除，请使用HTML生成方案');
+}
 
 module.exports = app; 

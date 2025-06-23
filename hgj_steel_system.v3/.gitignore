@@ -44,4 +44,5 @@ Thumbs.db
 *.sw?
 
 # 忽略旧版本的代码
-/hgj_steel_system.v2-master/ 
+/hgj_steel_system.v2-master/
+/过程学习积累/ 

@@ -99,8 +99,8 @@ const ProcurementList: React.FC<ProcurementListProps> = ({
     <Card title="V3规格化采购统计" size="small">
       <Alert
         type="info"
-        message="V3规格化采购指导"
-        description="直接按规格分组统计，无需映射转换。采购人员可直接按规格名称采购对应数量的钢材。"
+        message="采购指导"
+        description="采购人员可直接按规格名称采购对应数量的钢材。"
         style={{ marginBottom: 16 }}
         showIcon
       />
@@ -117,7 +117,7 @@ const ProcurementList: React.FC<ProcurementListProps> = ({
         }}
         title={() => (
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text strong>V3规格化采购清单</Text>
+            <Text strong>采购清单</Text>
             <Space>
               <Text type="secondary">总计: {moduleUsageStats.grandTotal.count}根</Text>
               <Text type="secondary">总长: {formatNumber(moduleUsageStats.grandTotal.totalLength, 0)}mm</Text>
@@ -129,13 +129,11 @@ const ProcurementList: React.FC<ProcurementListProps> = ({
       <div style={{ marginTop: 16 }}>
         <Alert
           type="success"
-          message="V3规格化采购优势"
+          message="采购优势"
           description={
             <ul style={{ margin: 0, paddingLeft: 20 }}>
-              <li><strong>直接按规格采购：</strong>无需截面面积映射，直接按规格名称采购</li>
-              <li><strong>编号系统优化：</strong>HRB400-A1格式，工人易于识别和管理</li>
-              <li><strong>真余料管理：</strong>精确区分真余料和伪余料，减少浪费</li>
-              <li><strong>生产指导：</strong>切割方案直接对应实际规格，便于执行</li>
+              <li><strong>🎉直接按规格采购：</strong>直接得出各个规格的采购数量，无需计算</li>
+              <li><strong>📝后续计划更新：</strong>增加采购重量和单价，便于直观查看成本</li>
             </ul>
           }
           showIcon

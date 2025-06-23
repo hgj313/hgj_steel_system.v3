@@ -123,6 +123,121 @@ const ResultsPage: React.FC = () => {
     );
   }
 
+  // 导出Excel功能
+  const handleExportExcel = async () => {
+    try {
+      setExporting(true);
+      
+      const exportData = {
+        optimizationResult: results,
+        exportOptions: {
+          format: 'excel',
+          includeCharts: false,
+          includeDetails: true,
+          includeLossRateBreakdown: true,
+          customTitle: `钢材优化报告_${new Date().toISOString().slice(0, 10)}`
+        }
+      };
+
+      const response = await fetch('/api/export/excel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(exportData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Excel导出失败');
+      }
+
+      // 获取文件名
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = '钢材优化报告.xlsx';
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (filenameMatch) {
+          filename = decodeURIComponent(filenameMatch[1].replace(/['"]/g, ''));
+        }
+      }
+
+      // 下载文件
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      message.success('Excel报告导出成功！');
+    } catch (error) {
+      console.error('Excel导出失败:', error);
+      message.error(`Excel导出失败: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // 导出PDF功能
+  const handleExportPDF = async () => {
+    try {
+      setExporting(true);
+      
+      const exportData = {
+        optimizationResult: results,
+        exportOptions: {
+          format: 'pdf',
+          includeCharts: false,
+          includeDetails: true,
+          includeLossRateBreakdown: true,
+          customTitle: `钢材优化报告_${new Date().toISOString().slice(0, 10)}`,
+          designSteels: designSteels // 添加设计钢材数据
+        }
+      };
+
+      const response = await fetch('/api/export/pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(exportData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'PDF导出失败');
+      }
+
+      // 解析JSON响应
+      const result = await response.json();
+      
+      if (result.success && result.downloadUrl) {
+        // 创建下载链接
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = result.downloadUrl;
+        a.download = result.filename || 'report.html';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        message.success(result.message || 'HTML报告导出成功！请在浏览器中打开并打印为PDF');
+      } else {
+        throw new Error(result.error || '导出失败');
+      }
+    } catch (error) {
+      console.error('PDF导出失败:', error);
+      message.error(`PDF导出失败: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   console.log('🔍 ResultsPage V3渲染信息:', {
     resultsKeys: Object.keys(results.solutions),
     designSteelsCount: designSteels?.length || 0,
@@ -175,25 +290,17 @@ const ResultsPage: React.FC = () => {
             icon={<FileExcelOutlined />} 
             size="large"
             loading={exporting}
-            onClick={() => {
-              setExporting(true);
-              // TODO: 实现导出功能
-              setTimeout(() => {
-                setExporting(false);
-                message.success('导出功能开发中');
-              }, 1000);
-            }}
+            onClick={handleExportExcel}
           >
-            导出V3规格化报告
+            导出采购清单(Excel)
           </Button>
           <Button 
             icon={<FilePdfOutlined />} 
             size="large"
-            onClick={() => {
-              message.info('PDF导出功能开发中');
-            }}
+            loading={exporting}
+            onClick={handleExportPDF}
           >
-            导出PDF报告
+            导出完整报告(PDF)
           </Button>
         </Space>
       </div>

@@ -81,8 +81,8 @@ const RequirementsValidation: React.FC<RequirementsValidationProps> = ({
       <Card title="V3规格化需求验证表" size="small">
         <Alert
           type="info"
-          message="V3规格化编号系统"
-          description="采用规格-字母数字编号（如HRB400-A1），直接反映钢材规格，便于生产管理。"
+          message="注意事项："
+          description="如果需求未全部满足请检查是否存在钢材长度超过最大模数钢材的长度。"
           style={{ marginBottom: 16 }}
           showIcon
         />
