@@ -382,77 +382,147 @@ class SteelOptimizerV3 {
   }
 
   /**
-   * 独立优化单个规格+截面面积组合（并行安全）
+   * 独立优化单个规格+截面面积组合（并行安全）- V3.1 装箱算法
+   * @description 使用首次适应递减(FFD)启发式算法，取代原有的贪婪策略，以获得更好的全局优化效果。
    */
   async optimizeGroupIndependently(steels, groupKey, remainderManager, taskStats) {
     const solution = new OptimizationSolution({});
-    const demands = this.createDemandList(steels);
-    
-    // 按长度降序排列，优先处理长钢材，确保优化效率
-    demands.sort((a, b) => b.length - a.length);
-    
-    let iterationCount = 0;
-    const maxIterations = demands.length * 100; // 设置更合理的迭代上限
+    let unfulfilledDemands = this.createFlatDemandList(steels);
 
-    // 🔧 结构性修复：改为"逐个需求满足"模式
-    for (const demand of demands) {
-      console.log(`🚀 处理新需求: ${demand.id}, 长度: ${demand.length}, 数量: ${demand.quantity}`);
-      
-      while (demand.remaining > 0 && !this.isTimeExceeded() && iterationCount < maxIterations) {
-        iterationCount++;
-        let progress = false;
+    // 按长度降序排序 (FFD 中的 "Decreasing")
+    unfulfilledDemands.sort((a, b) => b.length - a.length);
 
-        // 1. 优先尝试使用余料
-        const remainderResult = await this.tryUseRemainderIndependently(
-          demand, groupKey, solution, remainderManager, taskStats
+    let binCount = 0;
+    while (unfulfilledDemands.length > 0 && !this.isTimeExceeded()) {
+      binCount++;
+      const longestDemand = unfulfilledDemands[0];
+      let sourceMaterial = null;
+      let sourceType = '';
+      let usedRemaindersList = [];
+
+      // 步骤 1: 寻找一个合适的"箱子" - 优先使用余料
+      // 寻找能容纳最长需求的、最省料的单个余料
+      const bestRemainder = remainderManager.findBestSingleRemainder(longestDemand.length, groupKey);
+
+      if (bestRemainder) {
+        sourceMaterial = bestRemainder;
+        sourceType = 'remainder';
+        usedRemaindersList = [bestRemainder];
+        remainderManager.useSingleRemainder(bestRemainder.id, groupKey); // 标记余料为已用
+        taskStats.remaindersReused = (taskStats.remaindersReused || 0) + 1;
+      } else {
+        // 1b: 找不到合适的单个余料，尝试焊接组合
+        const bestCombination = remainderManager.findBestRemainderCombination(
+          longestDemand.length,
+          groupKey,
+          this.constraints.maxWeldingSegments // 关键：传入焊接段数约束
         );
-        if (remainderResult) {
-          progress = true;
-          console.log(`  ✅ 成功使用余料满足需求: ${demand.id}`);
-          continue; // 继续满足当前需求的剩余数量
-        }
 
-        // 2. 尝试使用模数钢材
-        const moduleResult = await this.useModuleSteelIndependently(
-          demand, groupKey, solution, remainderManager, taskStats
-        );
-        if (moduleResult) {
-          progress = true;
-          console.log(`  ✅ 成功使用模数钢材满足需求: ${demand.id}`);
-        }
+        if (bestCombination) {
+          // 找到了焊接组合
+          sourceType = 'remainder';
+          
+          // 标记并移除
+          bestCombination.remainders.forEach(r => r.markAsPseudo());
+          remainderManager.removeRemaindersFromPool(bestCombination.indices, groupKey);
 
-        // 3. 如果都没有进展，说明余料和现有模数钢材都无法满足，必须强制使用新模数钢材
-        if (!progress) {
-          console.warn(`  ⚠️ 余料和模数钢材均无进展，强制使用新模数钢材满足: ${demand.id}`);
-          const forceModuleResult = await this.useModuleSteelIndependently(
-            demand, groupKey, solution, remainderManager, taskStats, true // 强制执行
-          );
-          if (!forceModuleResult) {
-            console.error(`  ❌ 严重错误: 强制使用模数钢材失败，需求 ${demand.id} 可能无法满足`);
-            break; // 强制失败，跳出内循环
+          // 创建一个临时的"焊接后材料"对象作为箱子
+          sourceMaterial = { 
+              id: bestCombination.remainders.map(r => r.id).join('+'), 
+              length: bestCombination.totalLength, 
+              crossSection: this.parseGroupKey(groupKey)[1] 
+          };
+          usedRemaindersList = bestCombination.remainders;
+
+          taskStats.remaindersReused = (taskStats.remaindersReused || 0) + bestCombination.remainders.length;
+          if (bestCombination.remainders.length > 1) {
+              taskStats.weldingOperations = (taskStats.weldingOperations || 0) + 1;
           }
+        } else {
+          // 步骤 2: 如果所有余料方案都失败，则启用一根新的模数钢材
+          const newModule = this.selectBestModule(longestDemand, groupKey, unfulfilledDemands, true); // 强制选择
+          if (!newModule) {
+            console.error(`❌ 严重错误: 无法为需求 ${longestDemand.length}mm (组: ${groupKey}) 选择模数钢材。`);
+            break; 
+          }
+          sourceMaterial = newModule;
+          sourceType = 'module';
+          taskStats.moduleSteelsUsed = (taskStats.moduleSteelsUsed || 0) + 1;
+          taskStats.totalModuleLength = (taskStats.totalModuleLength || 0) + newModule.length;
         }
       }
-      if (demand.remaining > 0) {
-        console.error(`  ❌ 需求未完全满足: ${demand.id}, 剩余数量: ${demand.remaining}`);
+      
+      // 步骤 3: "装箱" - 使用首次适应策略 (FFD 中的 "First Fit")
+      const cuts = [];
+      let remainingLength = sourceMaterial.length;
+      const packedDemandUniqueIds = new Set();
+
+      for (const demand of unfulfilledDemands) {
+        if (demand.length <= remainingLength) {
+          cuts.push({ designId: demand.id, length: demand.length, quantity: 1 });
+          remainingLength -= demand.length;
+          packedDemandUniqueIds.add(demand.uniqueId);
+
+          solution.details.push(new CuttingDetail({
+            sourceType: sourceType, sourceId: sourceMaterial.id, sourceLength: sourceMaterial.length,
+            designId: demand.id, length: demand.length, quantity: 1, weldingCount: 1
+          }));
+        }
       }
+
+      // 步骤 4: 从待办列表中移除已满足的需求
+      unfulfilledDemands = unfulfilledDemands.filter(d => !packedDemandUniqueIds.has(d.uniqueId));
+
+      // 步骤 5: 处理切割后产生的余料或废料
+      let waste = 0;
+      const newRemainders = [];
+      if (remainingLength > 0) {
+        const remainderToEvaluate = new RemainderV3({
+          id: `${sourceMaterial.id}_rem`, length: remainingLength, type: REMAINDER_TYPES.PENDING,
+          sourceChain: [sourceMaterial.id], crossSection: sourceMaterial.crossSection || this.parseGroupKey(groupKey)[1],
+          specification: groupKey, createdAt: new Date().toISOString(),
+          originalLength: sourceMaterial.length, parentId: sourceMaterial.id
+        });
+        
+        const evalResult = remainderManager.evaluateAndProcessRemainder(remainderToEvaluate, groupKey, { source: `${sourceType}切割后` });
+
+        if (evalResult.isWaste) {
+          waste = evalResult.wasteLength;
+          taskStats.wasteGenerated = (taskStats.wasteGenerated || 0) + waste;
+        } else if (evalResult.isPendingRemainder) {
+          newRemainders.push(remainderToEvaluate);
+        }
+      }
+
+      // 步骤 6: 创建该"箱子"的切割计划
+      const cuttingPlan = new CuttingPlan({
+        sourceType: sourceType, sourceId: sourceMaterial.id,
+        sourceDescription: `${groupKey}组合${sourceType} ${sourceMaterial.id}`,
+        sourceLength: sourceMaterial.length,
+        cuts: this.groupCuts(cuts), // 将单个切割合并为带数量的
+        newRemainders: newRemainders, realRemainders: newRemainders,
+        waste: waste, usedRemainders: usedRemaindersList,
+        moduleLength: sourceType === 'module' ? sourceMaterial.length : undefined,
+        moduleType: sourceType === 'module' ? sourceMaterial.name : undefined,
+      });
+
+      solution.cuttingPlans.push(cuttingPlan);
+      taskStats.cuts += 1; // 这里的cut代表一次完整的切割计划
     }
-    
-    if (iterationCount >= maxIterations) {
-      console.warn(`⚠️ 并行任务${groupKey}: 达到最大迭代次数${maxIterations}，强制结束`);
+
+    if (unfulfilledDemands.length > 0) {
+        console.error(`❌ 需求未完全满足，组: ${groupKey}。剩余数量: ${unfulfilledDemands.length}`);
     }
-    
-    // 🔧 关键修复：在并行任务内部执行MW-CD交换优化
+
+    // 步骤 7: (可选) 在该组合内部执行后续优化
     console.log(`\n🔄 ${groupKey}组合内部MW-CD交换优化...`);
     const mwcdStats = await this.performInternalMWCDOptimization(solution, groupKey, remainderManager);
-    
     if (mwcdStats.exchangesPerformed > 0) {
       console.log(`✅ ${groupKey}组合完成${mwcdStats.exchangesPerformed}次内部交换，效益提升${mwcdStats.totalBenefitGained.toFixed(2)}mm`);
     }
     
     this.mergeTaskStatsToSolution(solution, taskStats);
-    
-    console.log(`✅ 并行任务${groupKey}优化完成: ${taskStats.cuts}次切割，${iterationCount}轮迭代，${mwcdStats.exchangesPerformed}次内部交换`);
+    console.log(`✅ 并行任务${groupKey}优化完成: 使用了 ${binCount} 个原材料, 完成 ${mwcdStats.exchangesPerformed} 次内部交换`);
     
     return solution;
   }
@@ -492,214 +562,69 @@ class SteelOptimizerV3 {
   }
 
   /**
-   * 并行安全的余料使用方法
+   * [V3.2] 智能选择最佳模数钢材 (使用"向前看"决策)
+   * @description 不再只选最短够用的，而是对每个候选模数钢材进行虚拟装箱，选出潜在利用率最高的。
    */
-  async tryUseRemainderIndependently(demand, groupKey, solution, remainderManager, taskStats) {
-    const combination = remainderManager.findBestRemainderCombination(
-      demand.length, 
-      groupKey,
-      this.constraints.weldingSegments
-    );
-    
-    if (!combination) return null;
-    
-    // 检查焊接约束
-    const weldingCount = combination.type === 'single' ? 1 : combination.remainders.length;
-    if (weldingCount > this.constraints.weldingSegments) {
-      return null;
-    }
-    
-    // 使用余料
-    const usageResult = remainderManager.useRemainder(
-      combination, 
-      demand.length, 
-      demand.id, 
-      groupKey
-    );
-    
-    // 🔧 修复关键问题：确保sourceType使用正确的常量值
-    const cuttingPlan = new CuttingPlan({
-      sourceType: 'remainder', // 🎯 直接使用字符串，确保与损耗率计算器匹配
-      sourceId: combination.remainders.map(r => r.id).join('+'), // 🔧 修复：添加sourceId字段
-      sourceDescription: `${groupKey}组合余料 ${combination.remainders.map(r => r.id).join('+')}`,
-      sourceLength: combination.totalLength,
-      cuts: [{
-        designId: demand.id,
-        length: demand.length,
-        quantity: 1
-      }],
-      usedRemainders: combination.remainders,
-      newRemainders: usageResult.newRemainders ? usageResult.newRemainders.filter(r => r.type !== 'waste') : [],
-      pseudoRemainders: usageResult.pseudoRemainders,
-      realRemainders: usageResult.realRemainders,
-      waste: usageResult.waste
-    });
-    
-    solution.cuttingPlans.push(cuttingPlan);
-    solution.details.push(...usageResult.details);
-    
-    // 更新需求和统计
-    demand.remaining -= 1;
-    taskStats.cuts += 1;
-    taskStats.remaindersReused += combination.remainders.length;
-    if (weldingCount > 1) {
-      taskStats.weldingOperations += 1;
-    }
-    
-    // --- 强制互斥校验与修正 ---
-    if (cuttingPlan) {
-      // 🔧 修复：区分真余料和废料类型的newRemainders
-      const realRemainderTotal = Array.isArray(cuttingPlan.newRemainders) 
-        ? cuttingPlan.newRemainders
-            .filter(r => r && r.type !== 'waste') // 只统计非废料的余料
-            .reduce((sum, r) => sum + (r.length || 0), 0) 
-        : 0;
-      const wasteVal = cuttingPlan.waste || 0;
-      
-      // 🔧 修复：只有真余料和waste同时存在时才是冲突
-      if (realRemainderTotal > 0 && wasteVal > 0) {
-        // 互斥冲突，保留较大者
-        if (realRemainderTotal >= wasteVal) {
-          cuttingPlan.waste = 0;
-          console.warn(`[互斥修正] cuttingPlan(${cuttingPlan.sourceId || ''}): 真余料(${realRemainderTotal})与waste(${wasteVal})同时为正，已将waste清零`);
-        } else {
-          // 清空非废料的余料，保留废料类型的余料
-          cuttingPlan.newRemainders = cuttingPlan.newRemainders.filter(r => r.type === 'waste');
-          cuttingPlan.realRemainders = [];
-          console.warn(`[互斥修正] cuttingPlan(${cuttingPlan.sourceId || ''}): 真余料(${realRemainderTotal})与waste(${wasteVal})同时为正，已清空真余料`);
-        }
-      }
-    }
-    
-    return true;
-  }
-
-  /**
-   * 并行安全的模数钢材使用方法
-   */
-  async useModuleSteelIndependently(demand, groupKey, solution, remainderManager, taskStats, force = false) {
-    const bestModule = this.selectBestModule(demand, groupKey, force);
-    if (!bestModule) {
-      // 在非强制模式下，找不到合适的模数钢材是正常情况
-      if (!force) {
-        console.log(`  - 找不到合适的模数钢材来满足 ${demand.id} (非强制模式)`);
-        return false;
-      }
-      // 在强制模式下，如果仍然找不到，这是个问题，但我们应记录并尝试恢复
-      console.error(`  ❌ 严重错误: 强制模式下也无法选择模数钢材来满足 ${demand.id}`);
-      return false;
-    }
-    
-    const moduleId = this.generateModuleId(groupKey);
-    const cuts = [];
-    let remainingLength = bestModule.length;
-    let currentQuantity = demand.remaining;
-    let waste = 0;
-    const newRemainders = [];
-    
-    // 计算最大可切割数量
-    const maxCuts = Math.floor(remainingLength / demand.length);
-    const actualCuts = Math.min(maxCuts, currentQuantity);
-    
-    if (actualCuts > 0) {
-      cuts.push({
-        designId: demand.id,
-        length: demand.length,
-        quantity: actualCuts
-      });
-      
-      // ❗ 最终修复：创建并记录切割明细，这是前端统计的关键数据源
-      const cuttingDetail = new CuttingDetail({
-        sourceType: 'module',
-        sourceId: moduleId,
-        sourceLength: bestModule.length,
-        designId: demand.id,
-        length: demand.length,
-        quantity: actualCuts,
-        weldingCount: 1
-      });
-      solution.details.push(cuttingDetail);
-
-      remainingLength -= demand.length * actualCuts;
-      demand.remaining -= actualCuts;
-      
-      // 🎯 统一计算架构核心：将剩余部分统一交给 RemainderManager 处理
-      if (remainingLength > 0) {
-        const remainderToEvaluate = new RemainderV3({
-          id: `${moduleId}_remainder`,
-          length: remainingLength,
-          type: REMAINDER_TYPES.PENDING,
-          sourceChain: [moduleId],
-          crossSection: bestModule.crossSection || 0,
-          specification: groupKey,
-          createdAt: new Date().toISOString(),
-          originalLength: bestModule.length,
-          parentId: moduleId
-        });
-        
-        const evaluationResult = remainderManager.evaluateAndProcessRemainder(remainderToEvaluate, groupKey, {
-          source: '模数钢材切割后'
-        });
-        
-        if (evaluationResult.isWaste) {
-          waste = evaluationResult.wasteLength;
-        } else if (evaluationResult.isPendingRemainder) {
-          newRemainders.push(remainderToEvaluate);
-        }
-      }
-      
-      const cuttingPlan = new CuttingPlan({
-        sourceType: 'module',
-        sourceId: moduleId,
-        sourceDescription: `${groupKey}组合模数钢材 ${moduleId}`,
-        sourceLength: bestModule.length,
-        moduleType: bestModule.name || `${bestModule.length}mm标准钢材`,
-        moduleLength: bestModule.length,
-        cuts: cuts,
-        newRemainders: newRemainders ? newRemainders.filter(r => r.type !== 'waste') : [],
-        pseudoRemainders: [],
-        realRemainders: newRemainders,
-        waste: waste, // 🎯 废料值完全由 RemainderManager 决定
-        usedRemainders: []
-      });
-      
-      solution.cuttingPlans.push(cuttingPlan);
-      
-      taskStats.cuts += 1;
-      taskStats.moduleSteelsUsed = (taskStats.moduleSteelsUsed || 0) + 1;
-      taskStats.totalModuleLength = (taskStats.totalModuleLength || 0) + bestModule.length;
-      taskStats.wasteGenerated += waste; // 🎯 废料统计也使用 RemainderManager 的计算结果
-      
-      console.log(`✅ ${groupKey}组合使用模数钢材: ${moduleId} (${bestModule.length}mm) → 切割${actualCuts}根${demand.length}mm，产生废料${waste}mm，新余料${newRemainders.length}个`);
-      
-      return true;
-    }
-    
-    return false;
-  }
-
-  /**
-   * V3规格化改进：选择最佳模数钢材（使用规格化池）
-   */
-  selectBestModule(demand, groupKey, force = false) {
+  selectBestModule(longestDemand, groupKey, unfulfilledDemands, force = false) {
     const pool = this.getOrCreateModuleSteelPool(groupKey);
-    
-    // 使用池中的动态生成逻辑
-    let steel = pool.getSteel(demand.length);
-    
-    // 强制模式下的备用逻辑
-    if (!steel && force) {
-      console.warn(`  ⚠️ (强制模式) 无法为 ${groupKey} 生成标准模数钢材，将使用默认最长规格`);
-      steel = pool.createSteel(Math.max(...pool.availableLengths));
-    }
-    
-    if (!steel) {
-      console.warn(`⚠️ (非强制模式) 无法为${groupKey}组合生成合适的模数钢材，需求长度: ${demand.length}mm`);
+    const availableModuleLengths = pool.availableLengths;
+
+    // 1. 找出所有可行的候选模数钢材
+    const candidates = availableModuleLengths.filter(len => len >= longestDemand.length);
+
+    if (candidates.length === 0) {
+      if (force) {
+        const maxLength = Math.max(...availableModuleLengths);
+        console.warn(`⚠️ (强制模式) 需求 ${longestDemand.length}mm 过长，所有模数钢材均不满足。将尝试使用最长的 ${maxLength}mm`);
+        return pool.createSteel(maxLength);
+      }
       return null;
     }
+
+    if (candidates.length === 1) {
+        const bestLength = candidates[0];
+        console.log(`🎯 只有一个候选模数钢材 (${bestLength}mm), 直接选择。`);
+        return pool.createSteel(bestLength);
+    }
     
-    console.log(`🎯 ${groupKey}组合选择模数钢材: ${steel.id} (${steel.length}mm)`);
-    return steel;
+    let bestChoice = {
+      length: -1,
+      utilization: -1,
+    };
+    
+    console.log(`🧐 [向前看] 开始评估 ${candidates.length} 个候选模数钢材...`);
+
+    for (const candidateLength of candidates) {
+      const { packedLength } = this.calculatePotentialUtilization(candidateLength, unfulfilledDemands);
+      const utilization = packedLength / candidateLength;
+
+      console.log(`  - 候选 ${candidateLength}mm: 潜力装载 ${packedLength}mm, 预期利用率 ${(utilization * 100).toFixed(2)}%`);
+
+      if (utilization > bestChoice.utilization) {
+        bestChoice.length = candidateLength;
+        bestChoice.utilization = utilization;
+      }
+    }
+
+    console.log(`✅ [向前看] 决策完成: 选择 ${bestChoice.length}mm (预期利用率 ${(bestChoice.utilization * 100).toFixed(2)}%)`);
+    
+    return pool.createSteel(bestChoice.length);
+  }
+
+  /**
+   * [新增] 辅助方法 - 为"向前看"机制计算给定箱子的潜在利用率
+   */
+  calculatePotentialUtilization(binSize, demands) {
+    let remainingLength = binSize;
+    let packedLength = 0;
+
+    for (const demand of demands) {
+      if (demand.length <= remainingLength) {
+        remainingLength -= demand.length;
+        packedLength += demand.length;
+      }
+    }
+    return { packedLength, remainingLength };
   }
 
   /**
@@ -1339,7 +1264,7 @@ class SteelOptimizerV3 {
   }
 
   /**
-   * 辅助方法
+   * 辅助方法 - [原版]
    */
   createDemandList(steels) {
     return steels.map(steel => ({
@@ -1349,6 +1274,35 @@ class SteelOptimizerV3 {
       remaining: steel.quantity,
       crossSection: steel.crossSection
     }));
+  }
+
+  /**
+   * [新增] 辅助方法 - 创建扁平化的需求列表，每个元素代表一根钢材
+   */
+  createFlatDemandList(steels) {
+    const flatList = [];
+    steels.forEach(steel => {
+      for (let i = 0; i < steel.quantity; i++) {
+        // 给予每个独立的部件一个唯一ID，便于追踪
+        flatList.push({ ...steel, uniqueId: `${steel.id}_${i}` });
+      }
+    });
+    return flatList;
+  }
+
+  /**
+   * [新增] 辅助方法 - 将单个切割项按 designId 和 length 分组合并
+   */
+  groupCuts(flatCuts) {
+    const grouped = new Map();
+    flatCuts.forEach(cut => {
+      const key = `${cut.designId}_${cut.length}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, { ...cut, quantity: 0 });
+      }
+      grouped.get(key).quantity += 1;
+    });
+    return Array.from(grouped.values());
   }
 
   isTimeExceeded() {

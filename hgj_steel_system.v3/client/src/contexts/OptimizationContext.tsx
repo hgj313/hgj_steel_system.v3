@@ -88,6 +88,7 @@ export interface OptimizationContextType {
   // 优化方法 - 更新为异步任务模式
   startOptimization: () => Promise<void>;
   cancelOptimization: () => void;
+  resetTask: () => void;
   clearOptimizationData: () => void;
   clearHistory: () => void;
   getOptimizationById: (id: string) => OptimizationResult | undefined;
@@ -479,6 +480,7 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
     // 优化方法
     startOptimization,
     cancelOptimization,
+    resetTask: asyncOptimization.resetTask,
     clearOptimizationData,
     clearHistory,
     getOptimizationById,

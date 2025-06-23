@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Card, 
   Button, 
@@ -78,6 +78,8 @@ const OptimizationPage: React.FC = () => {
     isOptimizing,
     progress,
     error,
+    taskStatus,
+    resetTask,
     setDesignSteels,
     addDesignSteel,
     updateDesignSteel,
@@ -92,6 +94,20 @@ const OptimizationPage: React.FC = () => {
   } = useOptimizationContext();
   
   const navigate = useNavigate();
+  
+  // 监听优化任务状态，完成后自动跳转
+  useEffect(() => {
+    if (taskStatus === 'completed') {
+      message.success('优化完成！正在跳转到结果页面...');
+      
+      // 在延迟跳转期间，重置任务状态，防止返回此页面时再次触发
+      resetTask();
+
+      setTimeout(() => {
+        navigate('/results');
+      }, 1000);
+    }
+  }, [taskStatus, navigate, resetTask]);
   
   // 本地UI状态
   const [designCollapsed, setDesignCollapsed] = useState(false);
@@ -388,19 +404,9 @@ const OptimizationPage: React.FC = () => {
     try {
       console.log('=== 开始优化执行 ===');
       await startOptimization();
-      
-      // 调试：检查优化完成后的数据状态
-      console.log('=== 优化完成后数据检查 ===');
-      
-      // 优化成功后跳转到结果页面
-      message.success('优化完成！正在跳转到结果页面...');
-      setTimeout(() => {
-        navigate('/results');
-      }, 1000);
-      
     } catch (error: any) {
       console.error('优化失败:', error);
-      message.error('优化失败，请重试');
+      message.error('优化任务提交失败，请重试');
     }
   };
 

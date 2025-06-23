@@ -391,6 +391,53 @@ class RemainderManager {
   }
 
   /**
+   * [新增] V3.1 - 寻找最佳的单个余料
+   * @description 为装箱算法(FFD)设计，寻找能容纳目标长度的、最经济的(即最短的)单个余料
+   * @param {number} minLength - 最小需要的长度
+   * @param {string} groupKey - 组合键
+   * @returns {RemainderV3 | null} - 找到的最佳余料对象，或null
+   */
+  findBestSingleRemainder(minLength, groupKey) {
+    this.initializePool(groupKey);
+    // 只在可用的、非废料的池中寻找
+    const pool = this.remainderPools[groupKey].filter(r => r.type !== REMAINDER_TYPES.WASTE && r.type !== REMAINDER_TYPES.PSEUDO);
+
+    if (pool.length === 0) {
+      return null;
+    }
+
+    // 因为池默认按升序排列，所以第一个满足条件的即是浪费最少的
+    const bestMatch = pool.find(r => r.length >= minLength);
+    
+    if (bestMatch) {
+      console.log(`✨ [FFD] 为 ${minLength}mm 找到最佳单个余料: ${bestMatch.id} (${bestMatch.length}mm)`);
+    }
+
+    return bestMatch || null;
+  }
+
+  /**
+   * [新增] V3.1 - 使用(移除)单个余料
+   * @description 为装箱算法(FFD)设计，从池中移除一个已被选中的余料
+   * @param {string} remainderId - 要移除的余料ID
+   * @param {string} groupKey - 组合键
+   */
+  useSingleRemainder(remainderId, groupKey) {
+    this.initializePool(groupKey);
+    const pool = this.remainderPools[groupKey];
+    const index = pool.findIndex(r => r.id === remainderId);
+
+    if (index !== -1) {
+      const removed = pool.splice(index, 1)[0];
+      console.log(`➖ [FFD] 从${groupKey}池中消耗单个余料: ${removed.id} (${removed.length}mm)`);
+      // 标记为伪余料，用于追溯，但不参与未来计算
+      removed.markAsPseudo();
+    } else {
+      console.warn(`⚠️ [FFD] 尝试消耗一个不存在的余料: ${remainderId}`);
+    }
+  }
+
+  /**
    * 使用余料进行切割
    * 关键：动态判断余料类型，并确保统计正确
    */
