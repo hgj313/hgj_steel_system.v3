@@ -637,7 +637,7 @@ app.post('/api/export/excel', async (req, res) => {
  */
 app.post('/api/export/pdf', async (req, res) => {
   try {
-    const { optimizationResult, exportOptions = {} } = req.body;
+    const { optimizationResult, exportOptions = {}, designSteels = [] } = req.body;
     
     if (!optimizationResult) {
       return res.status(400).json({
@@ -646,38 +646,30 @@ app.post('/api/export/pdf', async (req, res) => {
       });
     }
 
-    console.log('📄 开始生成PDF报告...');
+    console.log('📄 [方案B] 开始生成HTML报告内容...');
     
-    // 生成HTML内容
-    const htmlContent = generatePDFHTML(optimizationResult, exportOptions);
+    const htmlContent = generatePDFHTML(optimizationResult, { 
+      ...exportOptions, 
+      designSteels: designSteels 
+    });
     
-    // 生成文件名
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const filename = `钢材优化报告_${timestamp}.html`;
-    const filePath = path.join(__dirname, 'uploads', filename);
-    
-    // 确保uploads目录存在
-    if (!fs.existsSync(path.join(__dirname, 'uploads'))) {
-      fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
-    }
-    
-    // 写入HTML文件
-    fs.writeFileSync(filePath, htmlContent, 'utf8');
-    
-    console.log('✅ PDF报告生成成功:', filename);
+    const fileName = `钢材优化报告_${timestamp}.html`;
     
     res.json({
       success: true,
-      filename,
-      downloadUrl: `/api/download/${filename}`,
-      message: '钢材优化报告已生成为HTML格式，可在浏览器中打开并打印为PDF'
+      fileName: fileName,
+      htmlContent: htmlContent, // 直接在JSON中返回HTML内容
+      message: 'HTML报告内容已生成，请在前端处理下载。'
     });
     
+    console.log('✅ [方案B] HTML内容生成并发送成功');
+    
   } catch (error) {
-    console.error('❌ PDF导出失败:', error);
+    console.error('❌ PDF(HTML)导出失败:', error);
     res.status(500).json({
       success: false,
-      error: `PDF导出失败: ${error.message}`
+      error: `报告生成失败: ${error.message}`
     });
   }
 });
@@ -1176,32 +1168,6 @@ function generatePDFHTML(optimizationResult, exportOptions = {}) {
 </body>
 </html>`;
 }
-
-// 文件下载路由
-app.get('/api/download/:fileName', (req, res) => {
-  const fileName = req.params.fileName;
-  const filePath = path.join(__dirname, 'uploads', fileName);
-  
-  if (fs.existsSync(filePath)) {
-    res.download(filePath, (err) => {
-      if (err) {
-        console.error('下载错误:', err);
-      }
-      // 下载完成后延迟删除文件
-      setTimeout(() => {
-        try {
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-          }
-        } catch (deleteError) {
-          console.warn('文件删除警告:', deleteError);
-        }
-      }, 300000); // 5分钟后删除
-    });
-  } else {
-    res.status(404).json({ error: '文件不存在' });
-  }
-});
 
 // ==================== 导出功能实现 ====================
 

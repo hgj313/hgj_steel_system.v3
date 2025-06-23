@@ -187,17 +187,15 @@ const ResultsPage: React.FC = () => {
   const handleExportPDF = async () => {
     try {
       setExporting(true);
+      message.loading({ content: '正在生成报告...', key: 'export' });
       
       const exportData = {
         optimizationResult: results,
         exportOptions: {
-          format: 'pdf',
-          includeCharts: false,
-          includeDetails: true,
-          includeLossRateBreakdown: true,
-          customTitle: `钢材优化报告_${new Date().toISOString().slice(0, 10)}`,
-          designSteels: designSteels // 添加设计钢材数据
-        }
+          format: 'pdf', // 保留此参数以供后端识别
+          includeDetails: true
+        },
+        designSteels: designSteels
       };
 
       const response = await fetch('/api/export/pdf', {
@@ -210,29 +208,34 @@ const ResultsPage: React.FC = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'PDF导出失败');
+        throw new Error(errorData.error || '报告生成请求失败');
       }
 
-      // 解析JSON响应
       const result = await response.json();
       
-      if (result.success && result.downloadUrl) {
-        // 创建下载链接
+      if (result.success && result.htmlContent) {
+        // [方案B]核心逻辑：在前端创建并下载文件
+        const blob = new Blob([result.htmlContent], { type: 'text/html' });
+        const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.style.display = 'none';
-        a.href = result.downloadUrl;
-        a.download = result.filename || 'report.html';
+        a.href = url;
+        a.download = result.fileName || 'report.html';
         document.body.appendChild(a);
         a.click();
+        
+        // 清理
+        window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
 
-        message.success(result.message || 'HTML报告导出成功！请在浏览器中打开并打印为PDF');
+        message.success({ content: '报告已成功下载！请在浏览器中打开并打印为PDF。', key: 'export', duration: 5 });
       } else {
-        throw new Error(result.error || '导出失败');
+        throw new Error(result.error || '后端返回的数据格式不正确');
       }
     } catch (error) {
-      console.error('PDF导出失败:', error);
-      message.error(`PDF导出失败: ${error instanceof Error ? error.message : String(error)}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('报告导出失败:', errorMessage);
+      message.error({ content: `导出失败: ${errorMessage}`, key: 'export', duration: 3 });
     } finally {
       setExporting(false);
     }
