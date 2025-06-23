@@ -96,7 +96,7 @@ const ProcurementList: React.FC<ProcurementListProps> = ({
   ];
 
   return (
-    <Card title="V3规格化采购统计" size="small">
+    <Card title="采购统计" size="small">
       <Alert
         type="info"
         message="采购指导"

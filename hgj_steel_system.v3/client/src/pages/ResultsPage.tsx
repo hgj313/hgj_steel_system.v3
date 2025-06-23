@@ -251,7 +251,7 @@ const ResultsPage: React.FC = () => {
 
   return (
     <div style={{ padding: '24px' }}>
-      <Title level={2}>V3规格化优化结果分析</Title>
+      <Title level={2}>化优化结果分析</Title>
 
       {/* 顶部需求满足提示条已由父级统一显示，避免重复 */}
       
@@ -264,7 +264,7 @@ const ResultsPage: React.FC = () => {
           />
         </TabPane>
 
-        <TabPane tab="规格化切割方案" key="cutting">
+        <TabPane tab="切割方案" key="cutting">
           <CuttingPlansTable
             regroupedResults={processedResults.regroupedResults}
             designIdToDisplayIdMap={processedResults.designIdToDisplayIdMap}
@@ -278,7 +278,7 @@ const ResultsPage: React.FC = () => {
           />
         </TabPane>
 
-        <TabPane tab="规格化采购清单" key="procurement">
+        <TabPane tab="采购清单" key="procurement">
           <ProcurementList
             moduleUsageStats={processedResults.moduleUsageStats}
           />

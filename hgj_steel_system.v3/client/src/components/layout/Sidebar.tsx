@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, Menu, Button } from 'antd';
+import { Layout, Menu, Button, message } from 'antd';
 import { 
   HomeOutlined, 
   BarChartOutlined, 
@@ -7,7 +7,9 @@ import {
   HistoryOutlined, 
   SettingOutlined,
   MenuFoldOutlined,
-  MenuUnfoldOutlined
+  MenuUnfoldOutlined,
+  AppstoreOutlined,
+  BlockOutlined
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
@@ -37,9 +39,10 @@ const LogoContainer = styled(motion.div)`
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 24px;
+  padding: 0 16px; /* Adjusted padding */
   border-bottom: 1px solid ${props => props.theme?.colors?.border || '#e8e8e8'};
   background: ${props => props.theme?.colors?.surface || '#fafafa'};
+  cursor: pointer;
 `;
 
 const LogoText = styled.h1`
@@ -48,10 +51,22 @@ const LogoText = styled.h1`
   font-weight: 600;
   margin: 0;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+`;
+
+const GradientText = styled.span`
+  background: linear-gradient(90deg, #006400, #32CD32);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-fill-color: transparent;
+  position: relative;
+  top: -2px;
 `;
 
 const LogoIcon = styled.div`
-  width: 32px;
+  width: 48px; /* Adjusted width */
   height: 32px;
   background: ${props => props.theme?.colors?.primary || '#1677ff'};
   border-radius: 8px;
@@ -60,7 +75,7 @@ const LogoIcon = styled.div`
   justify-content: center;
   color: white;
   font-weight: bold;
-  font-size: 16px;
+  font-size: 14px; /* Adjusted font size */
 `;
 
 const CollapseButton = styled(Button)`
@@ -89,55 +104,52 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
   const navigate = useNavigate();
 
   const menuItems = [
-    {
-      key: '/',
-      icon: <HomeOutlined />,
-      label: '首页',
-    },
-    {
-      key: '/optimization',
-      icon: <BarChartOutlined />,
-      label: '优化配置',
-    },
-    {
-      key: '/results',
-      icon: <TableOutlined />,
-      label: '结果查看',
-    },
-    {
-      key: '/history',
-      icon: <HistoryOutlined />,
-      label: '历史记录',
-    },
-    {
-      key: '/settings',
-      icon: <SettingOutlined />,
-      label: '系统设置',
-    },
+    { key: '/', icon: <HomeOutlined />, label: '首页' },
+    { key: '/optimization', icon: <BarChartOutlined />, label: '优化配置' },
+    { key: '/results', icon: <TableOutlined />, label: '结果查看' },
+    { key: '/history', icon: <HistoryOutlined />, label: '历史记录' },
+    { key: '/settings', icon: <SettingOutlined />, label: '系统设置' },
   ];
 
   const handleMenuClick = ({ key }: { key: string }) => {
     navigate(key);
   };
 
+  const handleStoneSystemClick = () => {
+    message.info('开发中，敬请期待！', 2);
+  };
+
+  const systemMenuItems = [
+    {
+      key: 'stone-system',
+      icon: <BlockOutlined />,
+      label: '石材采购估算系统',
+      onClick: handleStoneSystemClick,
+    }
+  ];
+
   return (
     <StyledSider
       trigger={null}
       collapsible
       collapsed={collapsed}
-      width={256}
+      width={280} /* Adjusted width */
       collapsedWidth={80}
       theme="light"
     >
       <LogoContainer
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
+        onClick={() => onCollapse(false)}
       >
         {collapsed ? (
-          <LogoIcon>钢</LogoIcon>
+          <LogoIcon>GSE</LogoIcon>
         ) : (
-          <LogoText>钢材优化系统 V3</LogoText>
+          <LogoText>
+            <span style={{ fontWeight: 700, fontSize: '1.4em', marginRight: '8px', color: '#006400' }}>GSE</span>
+            <GradientText>采购智能系统 V3</GradientText>
+          </LogoText>
         )}
       </LogoContainer>
 
@@ -148,17 +160,26 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
         size="small"
       />
 
-      <Menu
-        mode="inline"
-        selectedKeys={[location.pathname]}
-        items={menuItems}
-        onClick={handleMenuClick}
-        style={{
-          border: 'none',
-          background: 'transparent',
-          marginTop: 16,
-        }}
-      />
+      {collapsed ? (
+        <Menu 
+          theme="light" 
+          mode="inline" 
+          items={systemMenuItems}
+          style={{ marginTop: 16, background: 'transparent', border: 'none' }}
+        />
+      ) : (
+        <Menu
+          mode="inline"
+          selectedKeys={[location.pathname]}
+          items={menuItems}
+          onClick={handleMenuClick}
+          style={{
+            border: 'none',
+            background: 'transparent',
+            marginTop: 16,
+          }}
+        />
+      )}
     </StyledSider>
   );
 };
