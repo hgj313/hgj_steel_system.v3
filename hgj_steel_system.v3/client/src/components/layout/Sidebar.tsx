@@ -148,7 +148,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
         ) : (
           <LogoText>
             <span style={{ fontWeight: 700, fontSize: '1.4em', marginRight: '8px', color: '#006400' }}>GSE</span>
-            <GradientText>采购智能系统 V3</GradientText>
+            <GradientText>智能采购系统 V3</GradientText>
           </LogoText>
         )}
       </LogoContainer>

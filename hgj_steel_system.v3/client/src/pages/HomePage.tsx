@@ -15,6 +15,8 @@ import { useNavigate } from 'react-router-dom';
 const PageContainer = styled.div`
   height: 100%;
   overflow: auto;
+  background-image: url('https://www.transparenttextures.com/patterns/brushed-metal.png');
+  background-color: ${props => props.theme?.colors?.background || '#ffffff'};
 `;
 
 const WelcomeCard = styled(Card)`
@@ -28,6 +30,9 @@ const WelcomeTitle = styled.h1`
   font-weight: 600;
   margin: 0 0 8px 0;
   color: ${props => props.theme?.colors?.text?.primary || '#262626'};
+  background: -webkit-linear-gradient(45deg, ${props => props.theme?.colors.primary}, ${props => props.theme?.colors?.secondary});
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 `;
 
 const WelcomeSubtitle = styled.p`
@@ -64,7 +69,7 @@ const HomePage: React.FC = () => {
   const stats = [
     {
       title: '总优化次数',
-      value: 0,
+      value: '-----',
       icon: <BarChartOutlined />,
       color: '#1677ff',
       prefix: undefined,
@@ -82,7 +87,7 @@ const HomePage: React.FC = () => {
     },
     {
       title: '优化效率',
-      value: 92.5,
+      value: '----',
       suffix: '%',
       icon: <ThunderboltOutlined />,
       color: '#faad14',
@@ -91,7 +96,7 @@ const HomePage: React.FC = () => {
     },
     {
       title: '成功率',
-      value: 98.7,
+      value: '----',
       suffix: '%',
       icon: <CheckCircleOutlined />,
       color: '#722ed1',
@@ -103,26 +108,26 @@ const HomePage: React.FC = () => {
   const recentActivities = [
     {
       title: '完成西耳墙项目优化',
-      description: '节省成本 ¥12,300',
-      time: '2小时前',
+      description: '节省成本 ¥......',
+      time: '----',
       type: 'success',
     },
     {
       title: '开始新的优化任务',
       description: '钢材清单已上传',
-      time: '4小时前',
+      time: '----',
       type: 'processing',
     },
     {
       title: '导出优化报告',
       description: 'PDF 报告已生成',
-      time: '1天前',
+      time: '----',
       type: 'default',
     },
     {
       title: '系统更新完成',
       description: '优化算法 V3.0 已上线',
-      time: '2天前',
+      time: '----',
       type: 'success',
     },
   ];
@@ -164,7 +169,7 @@ const HomePage: React.FC = () => {
         <WelcomeCard>
           <Row align="middle" justify="space-between">
             <Col>
-              <WelcomeTitle>欢迎使用钢材采购优化系统 V3.0</WelcomeTitle>
+              <WelcomeTitle> GSE智能钢材采购系统 </WelcomeTitle>
               <WelcomeSubtitle>
                 智能化钢材采购方案，最大化利用率，最小化成本浪费
               </WelcomeSubtitle>
