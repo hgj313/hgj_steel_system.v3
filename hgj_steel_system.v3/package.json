@@ -6,10 +6,13 @@
     "start": "concurrently \"npm:start-server\" \"npm:start-client\"",
     "start-server": "node server/stable.js",
     "start-client": "cd client && npm start",
-    "install-all": "npm install && cd client && npm install",
-    "build:netlify": "cd client && npm install && npm run build",
-    "dev": "npm run start",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "install-all": "npm install && cd client && npm install && cd ../server && npm install && cd ../netlify/functions && npm install",
+    "build:netlify": "npm install && npm run build",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "client": "npm start --prefix client",
+    "server": "node server/index.js",
+    "build": "cd client && npm run build"
   },
   "dependencies": {
     "@react-three/drei": "^10.3.0",
@@ -29,5 +32,9 @@
     "three": "^0.177.0",
     "uuid": "^9.0.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.2/xlsx-0.20.2.tgz"
+  },
+  "devDependencies": {
+    "cypress": "^13.13.0",
+    "netlify-cli": "^17.23.2"
   }
 }
