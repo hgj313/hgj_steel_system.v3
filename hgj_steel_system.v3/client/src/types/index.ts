@@ -42,7 +42,7 @@ export interface OptimizationConstraints {
   wasteThreshold: number;        // 废料阈值 (mm) - 余料长度小于此值时视为废料
   targetLossRate: number;        // 目标损耗率 (%) - 优化目标参考值（软约束）
   timeLimit: number;             // 计算时间限制 (ms) - 算法最大运行时间
-  maxWeldingSegments: number;    // 最大焊接段数 (段) - 单根设计钢材允许的最大焊接段数
+  maxWeldingSegments: number;    // 最大焊接次数 (次) - 单根设计钢材允许的最大焊接次数
 }
 
 export interface ConstraintViolation {
@@ -446,7 +446,7 @@ export const DEFAULT_CONSTRAINTS: OptimizationConstraints = {
   wasteThreshold: 100,        // 废料阈值 (mm)
   targetLossRate: 5,          // 目标损耗率 (%)
   timeLimit: 30,              // 计算时间限制 (秒) - 注意单位
-  maxWeldingSegments: 1,      // 最大焊接段数 (段)
+  maxWeldingSegments: 0,      // 最大焊接次数 (次)
 };
 
 export const UI_STEPS = {

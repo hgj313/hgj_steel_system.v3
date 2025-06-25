@@ -1,9 +1,6 @@
 # Netlify配置文件 - 钢材采购优化系统 V3.0
 
 [build]
-  # 根目录
-  base = "hgj_steel_system.v3"
-
   # 构建配置
   command = "npm run build:netlify"
   functions = "netlify/functions"
@@ -151,4 +148,10 @@
     performance = 0.9
     accessibility = 0.9
     best-practices = 0.9
-    seo = 0.9 
+    seo = 0.9
+
+[[plugins]]
+  package = "netlify-plugin-cypress"
+  
+  [plugins.inputs]
+    enable = false 

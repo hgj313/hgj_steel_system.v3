@@ -40,6 +40,7 @@ import { motion } from 'framer-motion';
 import { useOptimizationContext, DesignSteel, ModuleSteel } from '../contexts/OptimizationContext';
 import { DEFAULT_CONSTRAINTS } from '../types';
 import { useNavigate } from 'react-router-dom';
+import { generateDisplayIds } from '../utils/steelUtils';
 
 const { Title, Text } = Typography;
 const { Panel } = Collapse;
@@ -118,16 +119,13 @@ const OptimizationPage: React.FC = () => {
   const [editingModuleSteel, setEditingModuleSteel] = useState<ModuleSteel | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = React.useState<React.Key[]>([]);
 
+  // 统一使用稳健的、来自 utils 的显示ID生成逻辑
+  const designSteelsForDisplay = React.useMemo(() => {
+    return generateDisplayIds(designSteels);
+  }, [designSteels]);
+
   // 生成唯一ID
   const generateId = () => Math.random().toString(36).substr(2, 9);
-
-  // 生成显示ID
-  const generateDisplayIds = (steels: DesignSteel[]) => {
-    return steels.map((steel, index) => ({
-      ...steel,
-      displayId: `D${String(index + 1).padStart(3, '0')}`
-    }));
-  };
 
   // 1. 生成分组前缀工具函数
   function getLetterPrefix(index: number): string {
@@ -234,14 +232,15 @@ const OptimizationPage: React.FC = () => {
       const result = await response.json();
       
       if (result.success) {
-        const steelsWithDisplayIds = generateDisplayIds(result.designSteels || []);
+        // 使用与结果页完全一致的稳定编号逻辑
+        const steelsWithStableIds = generateDisplayIds(result.designSteels || []);
         
         // 清除之前的优化结果（因为上传了新数据）
         clearOptimizationData();
         
         // 保存到Context
-        setDesignSteels(steelsWithDisplayIds);
-        message.success(`成功上传 ${steelsWithDisplayIds.length} 条设计钢材数据`);
+        setDesignSteels(steelsWithStableIds);
+        message.success(`成功上传 ${steelsWithStableIds.length} 条设计钢材数据`);
         
         // 显示调试信息
         if (result.debugInfo) {
@@ -279,17 +278,20 @@ const OptimizationPage: React.FC = () => {
       length: values.length,
       quantity: values.quantity,
       crossSection: values.crossSection,
-      displayId: editingDesignSteel?.displayId || `D${String(designSteels.length + 1).padStart(3, '0')}`,
+      // 注意：displayId 由 useMemo 动态生成，此处无需手动赋值
       componentNumber: values.componentNumber,
       specification: values.specification,
       partNumber: values.partNumber
     };
 
     if (editingDesignSteel) {
-      updateDesignSteel(editingDesignSteel.id, steel);
+      // 更新时，先找到旧数据并替换，然后让 useMemo 重新计算编号
+      const updatedSteels = designSteels.map(s => s.id === editingDesignSteel.id ? steel : s);
+      setDesignSteels(updatedSteels);
       message.success('设计钢材更新成功');
     } else {
-      addDesignSteel(steel);
+      // 添加时，直接加入列表，让 useMemo 重新计算编号
+      setDesignSteels([...designSteels, steel]);
       message.success('设计钢材添加成功');
     }
 
@@ -438,7 +440,7 @@ const OptimizationPage: React.FC = () => {
       wasteThreshold: '当余料长度小于此值时，将被视为废料无法再次利用',
       targetLossRate: '算法优化时的目标损耗率，作为参考值（不是强制要求）',
       timeLimit: '算法计算的最大允许时间，超时后返回当前最优解',
-      maxWeldingSegments: '单根设计钢材允许的最大焊接段数，1段表示不允许焊接（V3新增功能）'
+      maxWeldingSegments: '单根设计钢材允许的最大焊接次数，0次表示不允许焊接（V3新增功能）'
     };
     return descriptions[field as keyof typeof descriptions] || '';
   };
@@ -458,8 +460,8 @@ const OptimizationPage: React.FC = () => {
       errors.push('计算时间限制必须在1-300秒之间');
     }
     
-    if (constraints.maxWeldingSegments < 1 || constraints.maxWeldingSegments > 10) {
-      errors.push('最大焊接段数必须在1-10段之间');
+    if (constraints.maxWeldingSegments < 0 || constraints.maxWeldingSegments > 9) {
+      errors.push('最大焊接次数必须在0-9次之间');
     }
     
     return errors;
@@ -473,13 +475,13 @@ const OptimizationPage: React.FC = () => {
     const maxModuleLength = Math.max(...moduleSteels.map(m => m.length));
     const conflictSteels = designSteels.filter(d => d.length > maxModuleLength);
     
-    if (conflictSteels.length > 0 && constraints.maxWeldingSegments === 1) {
+    if (conflictSteels.length > 0 && constraints.maxWeldingSegments === 0) {
       const maxDesignLength = Math.max(...conflictSteels.map(s => s.length));
-      const requiredSegments = Math.ceil(maxDesignLength / maxModuleLength);
+      const requiredTimes = Math.ceil(maxDesignLength / maxModuleLength) - 1;
       
       return {
         isValid: false,
-        message: `有 ${conflictSteels.length} 根设计钢材长度超过最长模数钢材(${maxModuleLength}mm)，建议将最大焊接段数调整为 ${requiredSegments} 段以上`
+        message: `有 ${conflictSteels.length} 根设计钢材长度超过最长模数钢材(${maxModuleLength}mm)，建议将最大焊接次数调整为 ${requiredTimes} 次以上`
       };
     }
 
@@ -491,8 +493,8 @@ const OptimizationPage: React.FC = () => {
   const columns = [
     {
       title: '分组编号',
-      dataIndex: 'groupIndex',
-      key: 'groupIndex',
+      dataIndex: 'displayId',
+      key: 'displayId',
       render: (value: string) => value || '-',
       width: 100,
     },
@@ -674,7 +676,7 @@ const OptimizationPage: React.FC = () => {
               <Table
                 rowSelection={rowSelection}
                 columns={columns}
-                dataSource={groupedDesignSteels}
+                dataSource={designSteelsForDisplay}
                 rowKey={(row) => row.id}
                 pagination={{
                   pageSize: 10,
@@ -737,7 +739,7 @@ const OptimizationPage: React.FC = () => {
           <div style={{ marginBottom: 16 }}>
             <Alert
               message="约束条件说明"
-              description="以下是基于V2版本增强的约束条件，其中最大焊接段数是V3新增功能"
+              description="以下是基于V2版本增强的约束条件，其中最大焊接次数是V3新增功能"
               type="info"
               showIcon
               style={{ marginBottom: 16 }}
@@ -814,15 +816,15 @@ const OptimizationPage: React.FC = () => {
             <Col xs={24} sm={12} md={6}>
               <Card size="small" title={
                 <span>
-                  最大焊接段数 (段)
+                  最大焊接次数 (次)
                   <Tag color="orange" style={{ marginLeft: 8 }}>V3新增</Tag>
                 </span>
               }>
                 <InputNumber
                   value={constraints.maxWeldingSegments}
                   onChange={(value) => handleConstraintChange('maxWeldingSegments', value || DEFAULT_CONSTRAINTS.maxWeldingSegments)}
-                  min={1}
-                  max={10}
+                  min={0}
+                  max={9}
                   style={{ width: '100%' }}
                   placeholder={DEFAULT_CONSTRAINTS.maxWeldingSegments.toString()}
                 />

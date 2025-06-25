@@ -389,6 +389,8 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
         moduleSteels: moduleSteels,
         constraints: {
           ...constraints,
+          // 将用户输入的焊接次数转换为后端需要的焊接段数（次数+1=段数）
+          maxWeldingSegments: constraints.maxWeldingSegments + 1,
           timeLimit: Math.round(constraints.timeLimit * 1000)
         }
       };

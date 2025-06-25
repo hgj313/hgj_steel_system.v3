@@ -82,7 +82,7 @@ const RequirementsValidation: React.FC<RequirementsValidationProps> = ({
         <Alert
           type="info"
           message="注意事项："
-          description="如果需求未全部满足，请检查是否在可焊接段数=1时，存在钢材长度超过最大模数钢材的长度。"
+          description="如果需求未全部满足，请检查是否在可焊接次数=1时，存在钢材长度超过最大模数钢材的长度。"
           style={{ marginBottom: 16 }}
           showIcon
         />
