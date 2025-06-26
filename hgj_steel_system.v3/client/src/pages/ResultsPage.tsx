@@ -6,7 +6,10 @@ import {
   Button,
   Space,
   message,
-  Skeleton
+  Skeleton,
+  Row,
+  Col,
+  Card
 } from 'antd';
 import { 
   FileExcelOutlined, 
@@ -108,9 +111,37 @@ const ResultsPage: React.FC = () => {
     return (
       <div style={{ padding: '24px' }}>
         <Title level={2}>
-          <Skeleton.Input style={{ width: 200 }} active />
+          <Skeleton.Input style={{ width: 200, marginBottom: 24 }} active />
         </Title>
-        <Skeleton active paragraph={{ rows: 8 }} />
+        
+        {/* High-fidelity Skeleton for Tabs and content */}
+        <div>
+          {/* Skeleton for Tab headers */}
+          <div style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', marginBottom: 24 }}>
+            <Skeleton.Button active style={{ width: 100, marginRight: 16 }} />
+            <Skeleton.Button active style={{ width: 100, marginRight: 16 }} />
+            <Skeleton.Button active style={{ width: 100, marginRight: 16 }} />
+            <Skeleton.Button active style={{ width: 100 }} />
+          </div>
+          
+          {/* Skeleton for Tab content (mimicking ResultsOverview) */}
+          <div>
+            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+              <Col span={8}><Card><Skeleton active paragraph={{ rows: 2 }} /></Card></Col>
+              <Col span={8}><Card><Skeleton active paragraph={{ rows: 2 }} /></Card></Col>
+              <Col span={8}><Card><Skeleton active paragraph={{ rows: 2 }} /></Card></Col>
+            </Row>
+            <Row>
+              <Col span={24}>
+                <Card>
+                  <Skeleton.Node active style={{ height: 300, width: '100%' }}>
+                    <div />
+                  </Skeleton.Node>
+                </Card>
+              </Col>
+            </Row>
+          </div>
+        </div>
       </div>
     );
   }
