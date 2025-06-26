@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, Row, Col, Statistic, Alert, Tag, Typography } from 'antd';
+import { Card, Row, Col, Statistic, Alert, Typography } from 'antd';
 import { 
   LineChart, 
   Line, 
@@ -8,9 +8,6 @@ import {
   CartesianGrid, 
   Legend, 
   ResponsiveContainer, 
-  PieChart, 
-  Pie, 
-  Cell,
   Tooltip
 } from 'recharts';
 import { TotalStats, ChartData } from '../../hooks/useOptimizationResults';

@@ -200,7 +200,7 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
       setOptimizationHistory(newHistory);
       saveToStorage(STORAGE_KEYS.OPTIMIZATION_HISTORY, newHistory);
     }
-  }, [asyncOptimization.currentTask, asyncOptimization.isActive, designSteels, moduleSteels, constraints, optimizationHistory, saveToStorage]);
+  }, [asyncOptimization, asyncOptimization.currentTask, asyncOptimization.isActive, designSteels, moduleSteels, constraints, optimizationHistory, saveToStorage]);
 
   // 从localStorage加载数据（增强版，带异常捕获）
   useEffect(() => {

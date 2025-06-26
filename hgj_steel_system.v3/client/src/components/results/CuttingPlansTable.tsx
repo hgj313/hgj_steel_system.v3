@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Collapse, Table, Tag, Typography, Space } from 'antd';
+import { Alert, Collapse, Table, Tag, Typography } from 'antd';
 import { formatNumber } from '../../utils/steelUtils';
 
 const { Text } = Typography;
@@ -196,7 +196,6 @@ const CuttingPlansTable: React.FC<CuttingPlansTableProps> = ({
       {Object.entries(regroupedResults).map(([specification, solution]: [string, any]) => {
         console.log('检查 solution:', { specification, solution });
         // 分组损耗率直接使用后端统计的 totalMaterial，避免前端重复计算
-        const totalMaterial = solution.totalMaterial || 0;
         const groupLossRate = solution.lossRate ?? 0;
           
         return (

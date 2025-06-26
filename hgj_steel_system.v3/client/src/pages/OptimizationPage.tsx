@@ -7,7 +7,6 @@ import {
   message, 
   Form, 
   Input, 
-  Select, 
   Row, 
   Col, 
   Divider,
@@ -82,10 +81,7 @@ const OptimizationPage: React.FC = () => {
     taskStatus,
     resetTask,
     setDesignSteels,
-    addDesignSteel,
-    updateDesignSteel,
     removeDesignSteel,
-    setModuleSteels,
     addModuleSteel,
     updateModuleSteel,
     removeModuleSteel,
@@ -138,40 +134,6 @@ const OptimizationPage: React.FC = () => {
     }
     return prefix;
   }
-
-  // 2. 生成分组编号后的数据
-  const groupedDesignSteels = React.useMemo(() => {
-    // 按规格+截面积分组
-    const groupMap = new Map<string, DesignSteel[]>();
-    designSteels.forEach(ds => {
-      const key = `${ds.specification || ''}_${Math.round(ds.crossSection || 0)}`;
-      if (!groupMap.has(key)) groupMap.set(key, []);
-      groupMap.get(key)!.push(ds);
-    });
-    // 分配分组前缀
-    const groupKeys = Array.from(groupMap.keys());
-    const prefixMap = new Map<string, string>();
-    groupKeys.forEach((key, idx) => {
-      prefixMap.set(key, getLetterPrefix(idx));
-    });
-    // 组装新数据
-    let result: any[] = [];
-    groupKeys.forEach((key) => {
-      const prefix = prefixMap.get(key)!;
-      const group = groupMap.get(key)!;
-      // 按长度升序排序
-      group.sort((a, b) => (a.length || 0) - (b.length || 0));
-      group.forEach((item, i) => {
-        result.push({
-          ...item,
-          groupIndex: `${prefix}${i + 1}`,
-          _groupPrefix: prefix,
-          _groupKey: key
-        });
-      });
-    });
-    return result;
-  }, [designSteels]);
 
   const rowSelection = {
     selectedRowKeys,

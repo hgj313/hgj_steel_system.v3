@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Layout, ConfigProvider, App as AntApp, theme } from 'antd';
+import { Layout, ConfigProvider, theme } from 'antd';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import styled, { ThemeProvider, createGlobalStyle } from 'styled-components';
@@ -137,11 +137,6 @@ const GlobalStyle = createGlobalStyle<{ theme: any }>`
 `;
 
 // 样式化组件
-const AppContainer = styled(Layout)`
-  height: 100vh;
-  overflow: hidden;
-`;
-
 const ContentWrapper = styled(motion.div)`
   height: 100%;
   overflow: auto;

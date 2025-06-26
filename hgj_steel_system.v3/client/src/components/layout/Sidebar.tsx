@@ -8,7 +8,6 @@ import {
   SettingOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  AppstoreOutlined,
   BlockOutlined
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';

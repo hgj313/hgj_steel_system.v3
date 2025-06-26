@@ -252,8 +252,7 @@ export const useOptimizationResults = (
       const groupKeyTotals: Record<string, { count: number; totalLength: number }> = {};
       
       Object.entries(statsData.bySpecification).forEach(([groupKey, specData]: [string, any]) => {
-        const [specification, crossSectionStr] = groupKey.split('_');
-        const crossSection = parseInt(crossSectionStr);
+        const [specification] = groupKey.split('_');
         
         Object.entries(specData.moduleBreakdown).forEach(([lengthStr, moduleData]: [string, any]) => {
           const length = parseInt(lengthStr);
@@ -478,6 +477,61 @@ export const useAsyncOptimization = () => {
   const [isPolling, setIsPolling] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
+  // 停止轮询
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    setIsPolling(false);
+  }, []);
+
+  // 开始轮询任务状态
+  const startPolling = useCallback((taskId: string) => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+
+    setIsPolling(true);
+    
+    const pollTaskStatus = async () => {
+      try {
+        const response = await fetch(`/api/task/${taskId}`);
+        const result = await response.json();
+
+        if (result.success) {
+          setCurrentTask(prev => ({
+            ...prev,
+            status: result.status,
+            progress: result.progress || 0,
+            message: result.message || '',
+            executionTime: result.executionTime || 0,
+            results: result.results || null,
+            error: result.error || null
+          }));
+
+          // 如果任务完成、失败或取消，停止轮询
+          if (['completed', 'failed', 'cancelled'].includes(result.status)) {
+            stopPolling();
+            console.log(`📋 任务${result.status}:`, taskId);
+          }
+        } else {
+          console.error('❌ 轮询任务状态失败:', result.error);
+          // 继续轮询，可能是临时网络问题
+        }
+      } catch (error) {
+        console.error('❌ 轮询请求异常:', error);
+        // 继续轮询，可能是临时网络问题
+      }
+    };
+
+    // 立即执行一次
+    pollTaskStatus();
+    
+    // 每2秒轮询一次
+    pollingRef.current = setInterval(pollTaskStatus, 2000);
+  }, [stopPolling]);
+
   // 提交优化任务
   const submitOptimization = useCallback(async (optimizationData: any) => {
     try {
@@ -529,62 +583,7 @@ export const useAsyncOptimization = () => {
       }));
       return { success: false, error: errorMessage };
     }
-  }, []);
-
-  // 开始轮询任务状态
-  const startPolling = useCallback((taskId: string) => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-    }
-
-    setIsPolling(true);
-    
-    const pollTaskStatus = async () => {
-      try {
-        const response = await fetch(`/api/task/${taskId}`);
-        const result = await response.json();
-
-        if (result.success) {
-          setCurrentTask(prev => ({
-            ...prev,
-            status: result.status,
-            progress: result.progress || 0,
-            message: result.message || '',
-            executionTime: result.executionTime || 0,
-            results: result.results || null,
-            error: result.error || null
-          }));
-
-          // 如果任务完成、失败或取消，停止轮询
-          if (['completed', 'failed', 'cancelled'].includes(result.status)) {
-            stopPolling();
-            console.log(`📋 任务${result.status}:`, taskId);
-          }
-        } else {
-          console.error('❌ 轮询任务状态失败:', result.error);
-          // 继续轮询，可能是临时网络问题
-        }
-      } catch (error) {
-        console.error('❌ 轮询请求异常:', error);
-        // 继续轮询，可能是临时网络问题
-      }
-    };
-
-    // 立即执行一次
-    pollTaskStatus();
-    
-    // 每2秒轮询一次
-    pollingRef.current = setInterval(pollTaskStatus, 2000);
-  }, []);
-
-  // 停止轮询
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-    setIsPolling(false);
-  }, []);
+  }, [startPolling]);
 
   // 取消任务
   const cancelTask = useCallback(async () => {
