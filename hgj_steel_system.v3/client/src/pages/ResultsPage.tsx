@@ -5,7 +5,8 @@ import {
   Typography, 
   Button,
   Space,
-  message
+  message,
+  Skeleton
 } from 'antd';
 import { 
   FileExcelOutlined, 
@@ -102,23 +103,14 @@ const ResultsPage: React.FC = () => {
     );
   }
 
-  // 空数据状态处理
+  // 空数据或加载中状态处理
   if (!results || !results.solutions) {
     return (
-      <div style={{ padding: '20px' }}>
-        <Alert
-          message="暂无优化结果"
-          description="请先执行钢材优化以查看结果。如果已执行优化但未显示结果，请检查优化配置。"
-          type="warning"
-          showIcon
-          action={
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <Button size="small" onClick={() => window.location.reload()}>
-              刷新页面
-            </Button>
-            </div>
-          }
-        />
+      <div style={{ padding: '24px' }}>
+        <Title level={2}>
+          <Skeleton.Input style={{ width: 200 }} active />
+        </Title>
+        <Skeleton active paragraph={{ rows: 8 }} />
       </div>
     );
   }
