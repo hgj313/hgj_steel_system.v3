@@ -180,29 +180,6 @@ const LoadingSubText = styled(motion.p)`
   font-size: 14px;
 `;
 
-// 创建一个专用的加载组件
-const LoadingComponent = () => (
-  <ContentWrapper>
-    <LoadingContainer
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-    >
-      <LoadingSpinner
-        animate={{ rotate: 360 }}
-        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-      />
-      <LoadingText
-        initial={{ y: 20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.2 }}
-      >
-        页面加载中...
-      </LoadingText>
-    </LoadingContainer>
-  </ContentWrapper>
-);
-
 const AppContent: React.FC = () => {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     try {
@@ -318,21 +295,46 @@ const AppContent: React.FC = () => {
       <ThemeProvider theme={currentTheme}>
         <GlobalStyle theme={currentTheme} />
         <Router>
-          <Layout style={{ minHeight: '100vh' }}>
-            <Sidebar 
-              collapsed={sidebarCollapsed}
-              onCollapse={setSidebarCollapsed}
-            />
-            <Layout>
-              <Header 
-                isDarkMode={isDarkMode}
-                onThemeToggle={toggleTheme}
-                sidebarCollapsed={sidebarCollapsed}
-                onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+          <Suspense fallback={
+            <Layout style={{ minHeight: '100vh' }}>
+              <Sidebar 
+                collapsed={false}
+                onCollapse={() => {}}
               />
-              <Content>
-                <AnimatePresence mode="wait">
-                  <Suspense fallback={<LoadingComponent />}>
+              <Layout>
+                <Header 
+                  isDarkMode={isDarkMode}
+                  onThemeToggle={() => {}}
+                  sidebarCollapsed={false}
+                  onSidebarToggle={() => {}}
+                />
+                <Content>
+                  <ContentWrapper>
+                    <LoadingContainer>
+                      <LoadingSpinner
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                      />
+                    </LoadingContainer>
+                  </ContentWrapper>
+                </Content>
+              </Layout>
+            </Layout>
+          }>
+            <Layout style={{ minHeight: '100vh' }}>
+              <Sidebar 
+                collapsed={sidebarCollapsed}
+                onCollapse={setSidebarCollapsed}
+              />
+              <Layout>
+                <Header 
+                  isDarkMode={isDarkMode}
+                  onThemeToggle={toggleTheme}
+                  sidebarCollapsed={sidebarCollapsed}
+                  onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+                />
+                <Content>
+                  <AnimatePresence mode="wait">
                     <Routes>
                       <Route path="/" element={<HomePage />} />
                       <Route path="/optimization" element={<OptimizationPage />} />
@@ -340,11 +342,11 @@ const AppContent: React.FC = () => {
                       <Route path="/history" element={<HistoryPage />} />
                       <Route path="/settings" element={<SettingsPage />} />
                     </Routes>
-                  </Suspense>
-                </AnimatePresence>
-              </Content>
+                  </AnimatePresence>
+                </Content>
+              </Layout>
             </Layout>
-          </Layout>
+          </Suspense>
         </Router>
       </ThemeProvider>
     </ConfigProvider>
