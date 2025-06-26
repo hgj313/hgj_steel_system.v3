@@ -3,7 +3,7 @@
  * 采用现代化苹果风格设计，支持深色模式
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Layout, ConfigProvider, theme } from 'antd';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -12,15 +12,17 @@ import styled, { ThemeProvider, createGlobalStyle } from 'styled-components';
 // 导入组件
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
-import HomePage from './pages/HomePage';
-import OptimizationPage from './pages/OptimizationPage';
-import ResultsPage from './pages/ResultsPage';
-import HistoryPage from './pages/HistoryPage';
-import SettingsPage from './pages/SettingsPage';
 
 // 导入主题和工具
 import { lightTheme, darkTheme } from './styles/theme';
 import { OptimizationProvider, useOptimizationContext } from './contexts/OptimizationContext';
+
+// 使用 React.lazy 进行代码分割
+const HomePage = lazy(() => import('./pages/HomePage'));
+const OptimizationPage = lazy(() => import('./pages/OptimizationPage'));
+const ResultsPage = lazy(() => import('./pages/ResultsPage'));
+const HistoryPage = lazy(() => import('./pages/HistoryPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
 const { Content } = Layout;
 
@@ -178,6 +180,29 @@ const LoadingSubText = styled(motion.p)`
   font-size: 14px;
 `;
 
+// 创建一个专用的加载组件
+const LoadingComponent = () => (
+  <ContentWrapper>
+    <LoadingContainer
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <LoadingSpinner
+        animate={{ rotate: 360 }}
+        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+      />
+      <LoadingText
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.2 }}
+      >
+        页面加载中...
+      </LoadingText>
+    </LoadingContainer>
+  </ContentWrapper>
+);
+
 const AppContent: React.FC = () => {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     try {
@@ -307,13 +332,15 @@ const AppContent: React.FC = () => {
               />
               <Content>
                 <AnimatePresence mode="wait">
-                  <Routes>
-                    <Route path="/" element={<HomePage />} />
-                    <Route path="/optimization" element={<OptimizationPage />} />
-                    <Route path="/results" element={<ResultsPage />} />
-                    <Route path="/history" element={<HistoryPage />} />
-                    <Route path="/settings" element={<SettingsPage />} />
-                  </Routes>
+                  <Suspense fallback={<LoadingComponent />}>
+                    <Routes>
+                      <Route path="/" element={<HomePage />} />
+                      <Route path="/optimization" element={<OptimizationPage />} />
+                      <Route path="/results" element={<ResultsPage />} />
+                      <Route path="/history" element={<HistoryPage />} />
+                      <Route path="/settings" element={<SettingsPage />} />
+                    </Routes>
+                  </Suspense>
                 </AnimatePresence>
               </Content>
             </Layout>
