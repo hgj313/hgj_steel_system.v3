@@ -32,6 +32,35 @@ const StyledSider = styled(Sider)`
       background: ${props => (props.theme?.colors?.primary || '#1677ff') + '20'};
     }
   }
+
+  &.ant-layout-sider-collapsed {
+    .stone-logo-menu-item {
+      margin: 16px auto !important;
+      width: 48px;
+      height: 48px;
+      padding: 0 !important;
+      border-radius: 12px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      &::after {
+        display: none;
+      }
+      &.ant-menu-item-selected,
+      &:hover {
+        background: #f0f2f5 !important;
+      }
+    }
+
+    .logo-icon-div {
+      width: 32px;
+      height: 32px;
+      background-image: url(/gse-stone-logo.png);
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+    }
+  }
 `;
 
 const LogoContainer = styled(motion.div)`
@@ -68,12 +97,10 @@ const GradientText = styled.span`
 const LogoIcon = styled.div`
   width: 48px; /* Adjusted width */
   height: 32px;
-  background: ${props => props.theme?.colors?.primary || '#1677ff'};
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
   font-weight: bold;
   font-size: 14px; /* Adjusted font size */
 `;
@@ -141,10 +168,12 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
-        onClick={() => onCollapse(false)}
+        onClick={() => onCollapse(!collapsed)}
       >
         {collapsed ? (
-          <LogoIcon>GSE</LogoIcon>
+          <LogoText>
+            <GradientText>GSE</GradientText>
+          </LogoText>
         ) : (
           <LogoText>
             <span style={{ fontWeight: 700, fontSize: '1.4em', marginRight: '8px', color: '#006400' }}>GSE</span>

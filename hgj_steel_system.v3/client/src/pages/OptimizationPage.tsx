@@ -240,19 +240,99 @@ const OptimizationPage: React.FC = () => {
         
         // 保存到Context
         setDesignSteels(steelsWithStableIds);
-        message.success(`成功上传 ${steelsWithStableIds.length} 条设计钢材数据`);
         
-        // 显示调试信息
+        // 智能解析成功消息
+        message.success(`${result.message} - 已应用稳定编号体系`);
+        
+        // 显示智能解析报告
+        if (result.analysisReport) {
+          const report = result.analysisReport;
+          
+          // 构建详细报告内容
+          let reportContent = [];
+          
+          // 🆕 表头发现信息
+          if (report.headerDiscovery) {
+            reportContent.push("🎯 表头发现：");
+            reportContent.push(`  • ${report.headerDiscovery.message}`);
+            if (report.headerDiscovery.searchScore) {
+              reportContent.push(`  • 识别置信度: ${report.headerDiscovery.searchScore}分`);
+            }
+          }
+          
+          // 字段识别情况
+          if (Object.keys(report.fieldMapping).length > 0) {
+            reportContent.push("📊 字段识别情况：");
+            Object.entries(report.fieldMapping).forEach(([field, column]) => {
+              const confidence = report.confidence[field] || 0;
+              reportContent.push(`  • ${field}: "${column}" (置信度: ${confidence}%)`);
+            });
+          }
+          
+          // 数据清洗报告
+          if (report.cleaningReport && report.cleaningReport.length > 0) {
+            reportContent.push("🔧 数据清洗：");
+            report.cleaningReport.forEach((action: string) => {
+              reportContent.push(`  • ${action}`);
+            });
+          }
+          
+          // 未识别的列
+          if (report.unidentifiedColumns && report.unidentifiedColumns.length > 0) {
+            reportContent.push("⚠️ 未识别的列（已忽略）：");
+            reportContent.push(`  • ${report.unidentifiedColumns.join(', ')}`);
+          }
+          
+          // 显示详细报告
+          if (reportContent.length > 0) {
+            console.log('=== 智能解析报告 ===');
+            console.log(reportContent.join('\n'));
+            
+            // 显示用户友好的解析摘要
+            const summaryParts = [];
+            if (report.headerDiscovery && report.headerDiscovery.foundAtRow > 1) {
+              summaryParts.push(`智能发现表头在第${report.headerDiscovery.foundAtRow}行`);
+            }
+            if (report.dataStats.validRows > 0) {
+              summaryParts.push(`成功解析 ${report.dataStats.validRows} 条数据`);
+            }
+            if (report.dataStats.skippedRows > 0) {
+              summaryParts.push(`跳过 ${report.dataStats.skippedRows} 条无效数据`);
+            }
+            if (Object.keys(report.fieldMapping).length > 0) {
+              summaryParts.push(`识别 ${Object.keys(report.fieldMapping).length} 个字段`);
+            }
+            
+            if (summaryParts.length > 0) {
+              message.info(
+                `智能解析完成：${summaryParts.join('，')}。查看控制台了解详细信息。`,
+                10 // 延长显示时间，因为信息更丰富
+              );
+            }
+            
+            // 🆕 特别提示表头发现功能
+            if (report.headerDiscovery && report.headerDiscovery.foundAtRow > 1) {
+              message.success(
+                `✨ 智能功能：自动跳过了前${report.headerDiscovery.foundAtRow - 1}行，在第${report.headerDiscovery.foundAtRow}行找到表头！`,
+                8
+              );
+            }
+          }
+        }
+        
+        // 显示传统调试信息（保持兼容性）
         if (result.debugInfo) {
-          console.log('=== 调试信息 ===');
+          console.log('=== 解析统计信息 ===');
           console.log('原始行数:', result.debugInfo.原始行数);
           console.log('有效数据:', result.debugInfo.有效数据);
-          console.log('列名信息:', result.debugInfo.列名信息);
-          console.log('截面面积统计:', result.debugInfo.截面面积统计);
+          console.log('跳过行数:', result.debugInfo.跳过行数);
+          console.log('字段识别数:', result.debugInfo.字段识别);
+          console.log('版本信息:', result.debugInfo.版本信息);
           
+          // 兼容旧版本的截面面积统计提示
           if (result.debugInfo.截面面积统计?.无截面面积 > 0) {
             message.warning(
-              `注意：${result.debugInfo.截面面积统计.无截面面积} 条数据的截面面积为0，请检查Excel文件的列名是否正确！`,
+              `注意：${result.debugInfo.截面面积统计.无截面面积} 条数据的截面面积为0，已设为默认值1000mm²！`,
               6
             );
           }
@@ -440,7 +520,7 @@ const OptimizationPage: React.FC = () => {
       wasteThreshold: '当余料长度小于此值时，将被视为废料无法再次利用',
       targetLossRate: '算法优化时的目标损耗率，作为参考值（不是强制要求）',
       timeLimit: '算法计算的最大允许时间，超时后返回当前最优解',
-      maxWeldingSegments: '单根设计钢材允许的最大焊接次数，0次表示不允许焊接（V3新增功能）'
+      maxWeldingSegments: '切割过程中允许的最大焊接次数，0次表示不允许焊接（V3新增功能）'
     };
     return descriptions[field as keyof typeof descriptions] || '';
   };
@@ -736,33 +816,22 @@ const OptimizationPage: React.FC = () => {
             </div>
           }
         >
-          <div style={{ marginBottom: 16 }}>
-            <Alert
-              message="约束条件说明"
-              description="以下是基于V2版本增强的约束条件，其中最大焊接次数是V3新增功能"
-              type="info"
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
-            
-            {/* 焊接约束冲突检查 */}
-            {(() => {
-              const validation = validateWeldingConstraint();
-              if (!validation.isValid) {
-                return (
-                  <Alert
-                    message="焊接约束冲突"
-                    description={validation.message}
-                    type="warning"
-                    showIcon
-                    style={{ marginBottom: 16 }}
-                  />
-                );
-              }
-              return null;
-            })()}
-          </div>
-
+          {/* 焊接约束冲突检查 */}
+          {(() => {
+            const validation = validateWeldingConstraint();
+            if (!validation.isValid) {
+              return (
+                <Alert
+                  message="焊接约束冲突"
+                  description={validation.message}
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                />
+              );
+            }
+            return null;
+          })()}
             <Row gutter={[16, 16]}>
             <Col xs={24} sm={12} md={6}>
               <Card size="small" title="废料阈值 (mm)">

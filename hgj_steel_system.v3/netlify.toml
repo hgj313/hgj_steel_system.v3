@@ -150,8 +150,8 @@
     best-practices = 0.9
     seo = 0.9
 
-[[plugins]]
-  package = "netlify-plugin-cypress"
+# [[plugins]]
+#   package = "netlify-plugin-cypress"
   
-  [plugins.inputs]
-    enable = false 
+#   [plugins.inputs]
+#     enable = false 
