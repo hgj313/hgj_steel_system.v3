@@ -123,18 +123,6 @@ const OptimizationPage: React.FC = () => {
   // 生成唯一ID
   const generateId = () => Math.random().toString(36).substr(2, 9);
 
-  // 1. 生成分组前缀工具函数
-  function getLetterPrefix(index: number): string {
-    let prefix = '';
-    let n = index + 1;
-    while (n > 0) {
-      let rem = (n - 1) % 26;
-      prefix = String.fromCharCode(65 + rem) + prefix;
-      n = Math.floor((n - 1) / 26);
-    }
-    return prefix;
-  }
-
   const rowSelection = {
     selectedRowKeys,
     onChange: (newSelectedRowKeys: React.Key[]) => setSelectedRowKeys(newSelectedRowKeys),

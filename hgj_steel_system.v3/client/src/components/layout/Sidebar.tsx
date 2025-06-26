@@ -93,16 +93,7 @@ const GradientText = styled.span`
   top: -2px;
 `;
 
-const LogoIcon = styled.div`
-  width: 48px; /* Adjusted width */
-  height: 32px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: bold;
-  font-size: 14px; /* Adjusted font size */
-`;
+
 
 const CollapseButton = styled(Button)`
   position: absolute;
