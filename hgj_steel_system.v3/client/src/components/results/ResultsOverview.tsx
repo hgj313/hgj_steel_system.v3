@@ -1,12 +1,19 @@
-import React, { Suspense, lazy } from 'react';
-import { Card, Row, Col, Statistic, Alert, Typography, Skeleton } from 'antd';
+import React from 'react';
+import { Card, Row, Col, Statistic, Alert, Typography } from 'antd';
+import { 
+  LineChart, 
+  Line, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Legend, 
+  ResponsiveContainer, 
+  Tooltip
+} from 'recharts';
 import { TotalStats, ChartData } from '../../hooks/useOptimizationResults';
 import { formatNumber } from '../../utils/steelUtils';
 
 const { Text } = Typography;
-
-// Lazy load the chart component
-const LossRateChart = lazy(() => import('./LossRateChart'));
 
 interface ResultsOverviewProps {
   totalStats: TotalStats;
@@ -81,10 +88,17 @@ const ResultsOverview: React.FC<ResultsOverviewProps> = ({
       {/* 规格化图表 */}
       <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
         <Col xs={24} lg={24}>
-          <Card title="各规格损耗率分析" size="small">
-            <Suspense fallback={<Skeleton.Node active style={{ height: 300, width: '100%' }}><div/></Skeleton.Node>}>
-              <LossRateChart data={chartData.lossRateData} />
-            </Suspense>
+          <Card title="各规格损耗率分析" size="small" bodyStyle={{ minHeight: 350 }}>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={chartData.lossRateData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="specification" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="lossRate" stroke="#8884d8" name="损耗率 (%)" />
+              </LineChart>
+            </ResponsiveContainer>
           </Card>
         </Col>
       </Row>
