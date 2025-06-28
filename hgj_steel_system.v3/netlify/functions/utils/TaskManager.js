@@ -308,12 +308,16 @@ class TaskManager {
   async executeOptimizationTask(taskId, optimizationData) {
     try {
       console.log(`🚀 开始执行优化任务: ${taskId}`);
+      console.log(`📊 输入数据 - 设计钢材: ${optimizationData.designSteels?.length || 0}条`);
+      console.log(`📊 输入数据 - 模数钢材: ${optimizationData.moduleSteels?.length || 0}条`);
       
       // 更新状态为运行中
       await this.updateTaskProgress(taskId, 10, '正在初始化优化器...');
       
       // 获取优化服务实例
+      console.log(`🔧 正在获取优化服务实例...`);
       const service = this.getOptimizationService();
+      console.log(`✅ 优化服务实例获取成功`);
       
       // 模拟进度更新
       await this.updateTaskProgress(taskId, 20, '正在解析输入数据...');
@@ -321,7 +325,9 @@ class TaskManager {
       // 执行优化计算
       await this.updateTaskProgress(taskId, 30, '正在计算最优切割方案...');
       
+      console.log(`🧮 开始执行优化计算...`);
       const result = await service.optimizeSteel(optimizationData);
+      console.log(`🧮 优化计算完成，结果:`, result.success ? '成功' : '失败');
       
       if (result.success) {
         console.log(`✅ 优化任务完成: ${taskId}`);
@@ -338,6 +344,7 @@ class TaskManager {
       
     } catch (error) {
       console.error(`💥 执行优化任务异常: ${taskId}`, error);
+      console.error(`💥 错误堆栈:`, error.stack);
       await this.setTaskError(taskId, error);
     }
   }
@@ -346,10 +353,18 @@ class TaskManager {
    * 获取优化服务实例
    */
   getOptimizationService() {
+    console.log(`🔍 检查 OptimizationService 可用性...`);
     if (OptimizationService) {
-      return new OptimizationService();
+      console.log(`✅ 使用真实的 OptimizationService`);
+      try {
+        return new OptimizationService();
+      } catch (error) {
+        console.error(`❌ 创建 OptimizationService 失败:`, error);
+        console.log(`🔄 降级到模拟优化服务`);
+        return this.createMockOptimizationService();
+      }
     } else {
-      // 创建模拟优化服务
+      console.log(`⚠️ OptimizationService 不可用，使用模拟优化服务`);
       return this.createMockOptimizationService();
     }
   }
@@ -358,10 +373,19 @@ class TaskManager {
    * 创建模拟优化服务
    */
   createMockOptimizationService() {
+    console.log(`🎭 创建模拟优化服务`);
     return {
       optimizeSteel: async (data) => {
+        console.log(`🎭 模拟优化开始，输入数据:`, {
+          designSteels: data.designSteels?.length || 0,
+          moduleSteels: data.moduleSteels?.length || 0
+        });
+        
         // 模拟计算时间
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        console.log(`⏰ 模拟计算中...`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        console.log(`🎭 模拟优化完成`);
         
         return {
           success: true,
@@ -369,12 +393,33 @@ class TaskManager {
             totalLossRate: 3.5,
             totalModuleUsed: 100,
             totalWaste: 50,
-            solutions: {},
-            executionTime: 2000,
-            summary: `优化完成，处理了${data.designSteels?.length || 0}种设计钢材`
+            solutions: {
+              'Q235_6': {
+                cuttingPlans: [
+                  {
+                    moduleLength: 12000,
+                    cuts: [
+                      { designId: 'design_1', length: 6000, quantity: 2 }
+                    ],
+                    waste: 0,
+                    efficiency: 100
+                  }
+                ]
+              }
+            },
+            executionTime: 3000,
+            summary: `模拟优化完成，处理了${data.designSteels?.length || 0}种设计钢材`,
+            completeStats: {
+              totalStats: {
+                totalModuleCount: 1,
+                totalModuleLength: 12000,
+                totalWaste: 0,
+                overallLossRate: 3.5
+              }
+            }
           },
-          optimizationId: 'netlify_' + Date.now(),
-          stats: { totalCuts: 10, remaindersGenerated: 5 }
+          optimizationId: 'netlify_mock_' + Date.now(),
+          stats: { totalCuts: 2, remaindersGenerated: 0 }
         };
       }
     };
