@@ -1,11 +1,10 @@
 /**
  * Netlify异步任务管理器
  * 负责任务的创建、存储、状态更新和异步执行
+ * 使用Netlify Blobs作为持久化存储
  */
 
-const fs = require('fs').promises;
-const path = require('path');
-const os = require('os');
+const { getStore } = require('@netlify/blobs');
 
 // 动态导入优化服务
 let OptimizationService;
@@ -17,35 +16,35 @@ try {
 
 class TaskManager {
   constructor() {
-    // 根据环境选择合适的临时目录
-    this.tempDir = process.env.NETLIFY ? '/tmp' : os.tmpdir();
-    this.tasksFilePath = path.join(this.tempDir, 'netlify_tasks.json');
+    this.store = getStore('optimization-tasks');
     this.maxTaskAge = 24 * 60 * 60 * 1000; // 24小时
-    this.taskCounter = 0; // 计数器将通过初始化加载
-    this.isInitialized = false; // 初始化状态标志
+    this.taskCounter = 0;
+    this.isInitialized = false;
   }
 
   /**
-   * 初始化任务管理器，加载任务并设置计数器
-   * 这是必要的，以避免在无状态环境中重置计数器
+   * 初始化任务管理器，加载并设置计数器
    */
   async initialize() {
     if (this.isInitialized) return;
 
-    const tasks = await this.loadTasks();
-    if (Object.keys(tasks).length > 0) {
-      // 从现有任务ID中推断出最大计数器
-      const maxCounter = Object.keys(tasks).reduce((max, taskId) => {
-        const parts = taskId.split('_');
-        // 兼容新旧ID格式 (task_ts_counter_random or task_ts_counter)
-        if (parts.length >= 3) {
-          const counter = parseInt(parts[2], 10);
-          return isNaN(counter) ? max : Math.max(max, counter);
-        }
-        return max;
-      }, 0);
-      this.taskCounter = maxCounter;
-    } else {
+    try {
+      const { blobs } = await this.store.list();
+      if (blobs.length > 0) {
+        const maxCounter = blobs.reduce((max, blob) => {
+          const parts = blob.key.split('_');
+          if (parts.length >= 3) {
+            const counter = parseInt(parts[2], 10);
+            return isNaN(counter) ? max : Math.max(max, counter);
+          }
+          return max;
+        }, 0);
+        this.taskCounter = maxCounter;
+      } else {
+        this.taskCounter = 0;
+      }
+    } catch (error) {
+      console.warn('初始化任务计数器失败，可能存储为空:', error);
       this.taskCounter = 0;
     }
     
@@ -55,7 +54,6 @@ class TaskManager {
 
   /**
    * 生成唯一任务ID
-   * 结合了时间戳、递增计数器和随机数以确保高并发下的唯一性
    */
   generateTaskId() {
     const timestamp = Date.now();
@@ -65,38 +63,12 @@ class TaskManager {
   }
 
   /**
-   * 加载任务数据
-   */
-  async loadTasks() {
-    try {
-      const data = await fs.readFile(this.tasksFilePath, 'utf8');
-      return JSON.parse(data);
-    } catch (error) {
-      // 文件不存在或读取失败，返回空对象
-      return {};
-    }
-  }
-
-  /**
-   * 保存任务数据
-   */
-  async saveTasks(tasks) {
-    try {
-      await fs.writeFile(this.tasksFilePath, JSON.stringify(tasks, null, 2));
-    } catch (error) {
-      console.error('保存任务数据失败:', error);
-      throw error;
-    }
-  }
-
-  /**
    * 创建新的优化任务
    */
   async createOptimizationTask(optimizationData) {
-    await this.initialize(); // 确保在使用前已初始化
+    await this.initialize();
 
     const taskId = this.generateTaskId();
-    const tasks = await this.loadTasks();
     
     const task = {
       id: taskId,
@@ -111,13 +83,11 @@ class TaskManager {
       results: null,
       error: null
     };
-    
-    tasks[taskId] = task;
-    await this.saveTasks(tasks);
+
+    await this.store.setJSON(taskId, task);
     
     console.log(`✅ 创建优化任务: ${taskId}`);
     
-    // 立即开始异步处理
     this.executeOptimizationTaskAsync(taskId, optimizationData);
     
     return taskId;
@@ -127,18 +97,16 @@ class TaskManager {
    * 获取任务信息
    */
   async getTask(taskId) {
-    const tasks = await this.loadTasks();
-    return tasks[taskId] || null;
+    return await this.store.get(taskId, { type: 'json' });
   }
 
   /**
    * 更新任务状态
    */
   async updateTaskStatus(taskId, status, updates = {}) {
-    await this.initialize(); // 确保计数器等状态正确
-    const tasks = await this.loadTasks();
-    const task = tasks[taskId];
+    await this.initialize();
     
+    const task = await this.getTask(taskId);
     if (!task) {
       throw new Error(`任务 ${taskId} 不存在`);
     }
@@ -146,10 +114,9 @@ class TaskManager {
     task.status = status;
     task.updatedAt = new Date().toISOString();
     
-    // 合并其他更新
     Object.assign(task, updates);
     
-    await this.saveTasks(tasks);
+    await this.store.setJSON(taskId, task);
     console.log(`📝 更新任务状态: ${taskId} -> ${status}`);
   }
 
@@ -289,10 +256,15 @@ class TaskManager {
   }
 
   /**
-   * 获取所有任务
+   * 获取所有任务(内部使用，谨慎)
    */
   async getAllTasks() {
-    return await this.loadTasks();
+    const { blobs } = await this.store.list();
+    const tasks = {};
+    for (const blob of blobs) {
+      tasks[blob.key] = await this.store.get(blob.key, { type: 'json' });
+    }
+    return tasks;
   }
 
   /**
@@ -300,9 +272,16 @@ class TaskManager {
    */
   async getTaskList(options = {}) {
     const { limit = 20, status = null } = options;
-    const tasks = await this.loadTasks();
+    const { blobs } = await this.store.list();
     
-    let taskList = Object.values(tasks);
+    let taskList = [];
+    for (const blob of blobs) {
+      // 为了效率，我们可以只获取元数据，但这里为了简单起见，获取完整任务
+      const task = await this.store.get(blob.key, { type: 'json' });
+      if (task) {
+        taskList.push(task);
+      }
+    }
     
     // 状态过滤
     if (status) {
@@ -344,21 +323,23 @@ class TaskManager {
    */
   async cleanupExpiredTasks() {
     await this.initialize();
-    const tasks = await this.loadTasks();
+    const { blobs } = await this.store.list();
     const now = Date.now();
     let cleanedCount = 0;
     
-    for (const [taskId, task] of Object.entries(tasks)) {
-      const taskAge = now - new Date(task.createdAt).getTime();
-      
-      if (taskAge > this.maxTaskAge) {
-        delete tasks[taskId];
-        cleanedCount++;
+    for (const blob of blobs) {
+      // 优化：可以直接检查元数据中的时间戳，如果存储了的话
+      const task = await this.store.get(blob.key, { type: 'json' });
+      if (task) {
+        const taskAge = now - new Date(task.createdAt).getTime();
+        if (taskAge > this.maxTaskAge) {
+          await this.store.delete(blob.key);
+          cleanedCount++;
+        }
       }
     }
     
     if (cleanedCount > 0) {
-      await this.saveTasks(tasks);
       console.log(`🧹 清理了 ${cleanedCount} 个过期任务`);
     }
     
