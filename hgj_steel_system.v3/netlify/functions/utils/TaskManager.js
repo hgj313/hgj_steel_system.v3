@@ -18,18 +18,50 @@ try {
 class TaskManager {
   constructor() {
     // 根据环境选择合适的临时目录
-    const os = require('os');
-    const tempDir = process.env.NETLIFY ? '/tmp' : os.tmpdir();
-    this.tasksFilePath = path.join(tempDir, 'netlify_tasks.json');
-    this.taskCounter = 0;
+    this.tempDir = process.env.NETLIFY ? '/tmp' : os.tmpdir();
+    this.tasksFilePath = path.join(this.tempDir, 'netlify_tasks.json');
     this.maxTaskAge = 24 * 60 * 60 * 1000; // 24小时
+    this.taskCounter = 0; // 计数器将通过初始化加载
+    this.isInitialized = false; // 初始化状态标志
+  }
+
+  /**
+   * 初始化任务管理器，加载任务并设置计数器
+   * 这是必要的，以避免在无状态环境中重置计数器
+   */
+  async initialize() {
+    if (this.isInitialized) return;
+
+    const tasks = await this.loadTasks();
+    if (Object.keys(tasks).length > 0) {
+      // 从现有任务ID中推断出最大计数器
+      const maxCounter = Object.keys(tasks).reduce((max, taskId) => {
+        const parts = taskId.split('_');
+        // 兼容新旧ID格式 (task_ts_counter_random or task_ts_counter)
+        if (parts.length >= 3) {
+          const counter = parseInt(parts[2], 10);
+          return isNaN(counter) ? max : Math.max(max, counter);
+        }
+        return max;
+      }, 0);
+      this.taskCounter = maxCounter;
+    } else {
+      this.taskCounter = 0;
+    }
+    
+    this.isInitialized = true;
+    console.log(`🔧 任务管理器初始化完成，当前计数器: ${this.taskCounter}`);
   }
 
   /**
    * 生成唯一任务ID
+   * 结合了时间戳、递增计数器和随机数以确保高并发下的唯一性
    */
   generateTaskId() {
-    return `task_${Date.now()}_${++this.taskCounter}`;
+    const timestamp = Date.now();
+    const counter = ++this.taskCounter;
+    const random = Math.floor(Math.random() * 900) + 100; // 3位随机数
+    return `task_${timestamp}_${counter}_${random}`;
   }
 
   /**
@@ -61,6 +93,8 @@ class TaskManager {
    * 创建新的优化任务
    */
   async createOptimizationTask(optimizationData) {
+    await this.initialize(); // 确保在使用前已初始化
+
     const taskId = this.generateTaskId();
     const tasks = await this.loadTasks();
     
@@ -101,6 +135,7 @@ class TaskManager {
    * 更新任务状态
    */
   async updateTaskStatus(taskId, status, updates = {}) {
+    await this.initialize(); // 确保计数器等状态正确
     const tasks = await this.loadTasks();
     const task = tasks[taskId];
     
@@ -308,6 +343,7 @@ class TaskManager {
    * 清理过期任务
    */
   async cleanupExpiredTasks() {
+    await this.initialize();
     const tasks = await this.loadTasks();
     const now = Date.now();
     let cleanedCount = 0;
