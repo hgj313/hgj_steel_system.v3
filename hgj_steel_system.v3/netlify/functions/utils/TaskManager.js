@@ -2,16 +2,40 @@
  * Netlify异步任务管理器 - Neon PostgreSQL版本
  * 负责任务的创建、存储、状态更新和异步执行
  * 使用Neon PostgreSQL作为持久化存储
+ * 完整支持原始优化系统功能
  */
 
 const { neon } = require('@neondatabase/serverless');
+const path = require('path');
 
-// 动态导入优化服务
-let OptimizationService;
+// 动态导入优化服务 - 使用绝对路径和更强的错误处理
+let OptimizationService = null;
+let optimizationServiceError = null;
+
+// 尝试加载完整的优化服务
 try {
-  OptimizationService = require('../../../api/services/OptimizationService');
+  console.log('🔍 尝试加载完整的 OptimizationService...');
+  
+  // 使用绝对路径从项目根目录加载
+  const servicePath = path.resolve(process.cwd(), 'api', 'services', 'OptimizationService.js');
+  console.log(`📂 服务路径: ${servicePath}`);
+  
+  OptimizationService = require(servicePath);
+  console.log('✅ OptimizationService 加载成功');
 } catch (error) {
-  console.warn('优化服务未找到，将使用模拟模式');
+  console.warn('⚠️ OptimizationService 加载失败:', error.message);
+  optimizationServiceError = error;
+  
+  // 尝试相对路径加载
+  try {
+    console.log('🔄 尝试相对路径加载...');
+    OptimizationService = require('../../../api/services/OptimizationService');
+    console.log('✅ OptimizationService 相对路径加载成功');
+    optimizationServiceError = null;
+  } catch (relativeError) {
+    console.warn('⚠️ 相对路径加载也失败:', relativeError.message);
+    optimizationServiceError = relativeError;
+  }
 }
 
 class TaskManager {
@@ -355,273 +379,70 @@ class TaskManager {
 
   /**
    * 获取优化服务实例
-   * Netlify Functions 优化版本 - 优先使用功能完整的内联算法
+   * 优先使用完整的 OptimizationService，确保功能完整性
    */
   getOptimizationService() {
-    console.log(`🔍 Netlify 环境检查 OptimizationService 可用性...`);
+    console.log(`🔍 检查 OptimizationService 可用性...`);
     
-    // 在 Netlify 环境中，使用功能完整的内联优化服务
-    if (process.env.NETLIFY) {
-      console.log(`🌐 检测到 Netlify 环境，使用功能完整的内联优化服务`);
-      return this.createNetlifyOptimizationService();
-    }
-    
-    // 本地环境尝试使用真实服务
-    if (OptimizationService) {
-      console.log(`✅ 本地环境，尝试使用真实的 OptimizationService`);
+    if (OptimizationService && !optimizationServiceError) {
+      console.log(`✅ 使用完整的 OptimizationService`);
       try {
-        return new OptimizationService();
+        const service = new OptimizationService();
+        console.log(`🎯 完整优化服务实例化成功`);
+        return service;
       } catch (error) {
-        console.error(`❌ 创建 OptimizationService 失败:`, error);
-        console.log(`🔄 降级到内联优化服务`);
-        return this.createNetlifyOptimizationService();
+        console.error(`❌ 创建 OptimizationService 实例失败:`, error);
+        console.error(`📋 详细错误信息:`, error.stack);
+        
+        // 记录依赖加载问题的详细信息
+        this.logDependencyDiagnostics(error);
+        
+        throw new Error(`完整优化服务不可用: ${error.message}`);
       }
     } else {
-      console.log(`⚠️ OptimizationService 不可用，使用内联优化服务`);
-      return this.createNetlifyOptimizationService();
+      console.error(`❌ OptimizationService 不可用`);
+      if (optimizationServiceError) {
+        console.error(`📋 加载错误详情:`, optimizationServiceError.message);
+        console.error(`📋 错误堆栈:`, optimizationServiceError.stack);
+        this.logDependencyDiagnostics(optimizationServiceError);
+      }
+      
+      throw new Error(`完整优化服务不可用，请检查依赖配置`);
     }
   }
 
   /**
-   * 创建简化但功能完整的优化服务
-   * 内联实现核心优化算法，无外部依赖，适用于 Netlify Functions
+   * 记录依赖诊断信息
    */
-  createNetlifyOptimizationService() {
-    console.log(`🔧 创建 Netlify 专用优化服务 (功能完整版)`);
+  logDependencyDiagnostics(error) {
+    console.log(`\n🔍 === 依赖诊断信息 ===`);
+    console.log(`📂 当前工作目录: ${process.cwd()}`);
+    console.log(`🌐 Node.js 版本: ${process.version}`);
+    console.log(`⚙️ 运行环境: ${process.env.NODE_ENV || 'unknown'}`);
+    console.log(`🔧 Netlify 环境: ${process.env.NETLIFY ? 'Yes' : 'No'}`);
     
-    return {
-      optimizeSteel: async (data) => {
-        console.log(`⚙️ 开始真实优化计算...`);
-        
-        const designSteels = data.designSteels || [];
-        const moduleSteels = data.moduleSteels || [];
-        const constraints = data.constraints || {};
-        
-        // 参数验证
-        if (designSteels.length === 0) {
-          throw new Error('设计钢材数据为空');
-        }
-        if (moduleSteels.length === 0) {
-          throw new Error('模数钢材数据为空');
-        }
-        
-        console.log(`📊 输入数据 - 设计钢材: ${designSteels.length}条, 模数钢材: ${moduleSteels.length}种`);
-        
-        // 核心优化算法
-        const optimizationResult = await this.performOptimization(designSteels, moduleSteels, constraints);
-        
-        console.log(`✅ 优化计算完成 - 损耗率: ${optimizationResult.totalLossRate.toFixed(2)}%`);
-        
-        return {
-          success: true,
-          result: optimizationResult,
-          optimizationId: 'netlify_real_' + Date.now(),
-          stats: {
-            totalCuts: optimizationResult.totalCuts,
-            remaindersGenerated: optimizationResult.remaindersGenerated
-          }
-        };
-      },
+    if (error.code === 'MODULE_NOT_FOUND') {
+      console.log(`❌ 模块未找到错误: ${error.message}`);
       
-      // 核心优化算法实现
-      performOptimization: async (designSteels, moduleSteels, constraints) => {
-        const wasteThreshold = constraints.wasteThreshold || 100;
-        const maxWeldingSegments = constraints.maxWeldingSegments || 1;
-        
-        // 按规格分组
-        const specGroups = this.groupBySpecification(designSteels);
-        const solutions = {};
-        let totalModuleUsed = 0;
-        let totalWaste = 0;
-        let totalCuts = 0;
-        let remaindersGenerated = 0;
-        
-        // 为每个规格组计算最优切割方案
-        for (const [specKey, steels] of Object.entries(specGroups)) {
-          console.log(`🔍 处理规格组: ${specKey}, ${steels.length}种钢材`);
-          
-          const groupSolution = await this.optimizeSpecGroup(steels, moduleSteels, wasteThreshold, maxWeldingSegments);
-          solutions[specKey] = groupSolution;
-          
-          // 累计统计
-          totalModuleUsed += groupSolution.moduleCount;
-          totalWaste += groupSolution.totalWaste;
-          totalCuts += groupSolution.totalCuts;
-          remaindersGenerated += groupSolution.remainders;
+      // 尝试检查文件是否存在
+      const fs = require('fs');
+      const possiblePaths = [
+        path.resolve(process.cwd(), 'api', 'services', 'OptimizationService.js'),
+        path.resolve(process.cwd(), 'core', 'optimizer', 'SteelOptimizerV3.js'),
+        path.resolve(process.cwd(), 'api', 'types', 'index.js')
+      ];
+      
+      possiblePaths.forEach(filePath => {
+        try {
+          const exists = fs.existsSync(filePath);
+          console.log(`📁 ${filePath}: ${exists ? '✅ 存在' : '❌ 不存在'}`);
+        } catch (checkError) {
+          console.log(`📁 ${filePath}: ❓ 检查失败 - ${checkError.message}`);
         }
-        
-        const totalModuleLength = totalModuleUsed * (moduleSteels[0]?.length || 12000);
-        const totalLossRate = totalModuleLength > 0 ? (totalWaste / totalModuleLength) * 100 : 0;
-        
-        // 生成需求验证数据
-        const requirementValidation = this.generateRequirementValidation(designSteels, solutions);
-        
-        return {
-          totalLossRate: totalLossRate,
-          totalModuleUsed: totalModuleUsed,
-          totalWaste: totalWaste,
-          totalCuts: totalCuts,
-          remaindersGenerated: remaindersGenerated,
-          solutions: solutions,
-          executionTime: 2000,
-          summary: `优化完成，处理了${designSteels.length}种设计钢材，生成${Object.keys(solutions).length}个规格组的切割方案`,
-          completeStats: {
-            totalStats: {
-              totalModuleCount: totalModuleUsed,
-              totalModuleLength: totalModuleLength,
-              totalWaste: totalWaste,
-              overallLossRate: totalLossRate
-            },
-            requirementValidation: {
-              summary: {
-                allSatisfied: requirementValidation.every(item => item.satisfied),
-                totalRequirements: requirementValidation.length,
-                satisfiedCount: requirementValidation.filter(item => item.satisfied).length
-              },
-              items: requirementValidation
-            },
-            consistencyCheck: {
-              isConsistent: true,
-              errors: []
-            }
-          }
-        };
-      },
-      
-      // 按规格分组
-      groupBySpecification: (designSteels) => {
-        const groups = {};
-        designSteels.forEach(steel => {
-          const specKey = `${steel.specification || 'Q235'}_${steel.crossSection || 6}`;
-          if (!groups[specKey]) {
-            groups[specKey] = [];
-          }
-          groups[specKey].push(steel);
-        });
-        return groups;
-      },
-      
-      // 优化单个规格组
-      optimizeSpecGroup: async (steels, moduleSteels, wasteThreshold, maxWeldingSegments) => {
-        const moduleLength = moduleSteels[0]?.length || 12000;
-        const cuttingPlans = [];
-        let moduleCount = 0;
-        let totalWaste = 0;
-        let totalCuts = 0;
-        let remainders = 0;
-        
-        // 按长度排序，优先处理长钢材
-        const sortedSteels = [...steels].sort((a, b) => b.length - a.length);
-        const remainingDemands = new Map();
-        
-        // 初始化需求
-        sortedSteels.forEach(steel => {
-          remainingDemands.set(steel.id || steel.displayId, steel.quantity);
-        });
-        
-        // 贪心算法：尽可能多地在每根模数钢材上切割
-        while (this.hasRemainingDemands(remainingDemands)) {
-          const plan = this.createCuttingPlan(sortedSteels, remainingDemands, moduleLength, maxWeldingSegments);
-          
-          if (plan.cuts.length === 0) break; // 无法继续切割
-          
-          cuttingPlans.push(plan);
-          moduleCount++;
-          totalWaste += plan.waste;
-          totalCuts += plan.cuts.reduce((sum, cut) => sum + cut.quantity, 0);
-          
-          if (plan.waste > wasteThreshold) {
-            remainders++;
-          }
-          
-          // 更新剩余需求
-          plan.cuts.forEach(cut => {
-            const remaining = remainingDemands.get(cut.designId) - cut.quantity;
-            remainingDemands.set(cut.designId, Math.max(0, remaining));
-          });
-        }
-        
-        return {
-          cuttingPlans: cuttingPlans,
-          moduleCount: moduleCount,
-          totalWaste: totalWaste,
-          totalCuts: totalCuts,
-          remainders: remainders
-        };
-      },
-      
-      // 检查是否还有未满足的需求
-      hasRemainingDemands: (remainingDemands) => {
-        for (const quantity of remainingDemands.values()) {
-          if (quantity > 0) return true;
-        }
-        return false;
-      },
-      
-      // 创建单根模数钢材的切割计划
-      createCuttingPlan: (steels, remainingDemands, moduleLength, maxWeldingSegments) => {
-        const cuts = [];
-        let usedLength = 0;
-        let segments = 0;
-        
-        // 贪心选择：优先选择能最大化利用率的组合
-        for (const steel of steels) {
-          const remaining = remainingDemands.get(steel.id || steel.displayId);
-          if (remaining <= 0) continue;
-          
-          // 计算能切割的数量
-          const maxFit = Math.floor((moduleLength - usedLength) / steel.length);
-          const actualCut = Math.min(maxFit, remaining);
-          
-          if (actualCut > 0 && segments < maxWeldingSegments) {
-            cuts.push({
-              designId: steel.id || steel.displayId,
-              length: steel.length,
-              quantity: actualCut
-            });
-            usedLength += steel.length * actualCut;
-            segments++;
-          }
-        }
-        
-        return {
-          moduleLength: moduleLength,
-          cuts: cuts,
-          waste: moduleLength - usedLength,
-          efficiency: (usedLength / moduleLength) * 100
-        };
-      },
-      
-      // 生成需求验证数据
-      generateRequirementValidation: (designSteels, solutions) => {
-        return designSteels.map(steel => {
-          let produced = 0;
-          
-          // 统计该设计钢材的生产数量
-          Object.values(solutions).forEach(solution => {
-            solution.cuttingPlans.forEach(plan => {
-              plan.cuts.forEach(cut => {
-                if (cut.designId === (steel.id || steel.displayId)) {
-                  produced += cut.quantity;
-                }
-              });
-            });
-          });
-          
-          return {
-            key: steel.id || steel.displayId,
-            id: steel.displayId || steel.id,
-            specification: steel.specification || 'Q235',
-            crossSection: steel.crossSection || 6,
-            length: steel.length,
-            quantity: steel.quantity,
-            produced: produced,
-            satisfied: produced >= steel.quantity,
-            difference: produced - steel.quantity
-          };
-        });
-      }
-    };
+      });
+    }
+    
+    console.log(`=== 依赖诊断信息结束 ===\n`);
   }
 
   /**
