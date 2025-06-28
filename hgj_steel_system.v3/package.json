@@ -12,6 +12,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.0.1",
     "@netlify/blobs": "^10.0.2",
     "@react-three/drei": "^10.3.0",
     "@react-three/fiber": "^9.1.2",

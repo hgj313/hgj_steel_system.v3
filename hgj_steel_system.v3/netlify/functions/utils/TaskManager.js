@@ -1,13 +1,10 @@
 /**
- * Netlify异步任务管理器
+ * Netlify异步任务管理器 - Neon PostgreSQL版本
  * 负责任务的创建、存储、状态更新和异步执行
- * 使用Netlify Blobs作为持久化存储，本地环境降级到内存存储
+ * 使用Neon PostgreSQL作为持久化存储
  */
 
-const { getStore } = require('@netlify/blobs');
-const fs = require('fs').promises;
-const path = require('path');
-const os = require('os');
+const { neon } = require('@neondatabase/serverless');
 
 // 动态导入优化服务
 let OptimizationService;
@@ -19,127 +16,75 @@ try {
 
 class TaskManager {
   constructor() {
-    // 检测运行环境
-    this.isNetlifyEnvironment = !!process.env.NETLIFY;
-    
-    if (this.isNetlifyEnvironment) {
-      try {
-        this.store = getStore('optimization-tasks');
-        this.storageType = 'blobs';
-        console.log('🔧 使用 Netlify Blobs 存储');
-      } catch (error) {
-        console.warn('⚠️ Netlify Blobs 初始化失败，降级到文件存储:', error);
-        this.initFileStorage();
-      }
-    } else {
-      console.log('🔧 本地环境，使用文件存储');
-      this.initFileStorage();
-    }
-    
+    // 从环境变量获取数据库连接字符串
+    this.databaseUrl = process.env.DATABASE_URL;
+    this.sql = null;
     this.maxTaskAge = 24 * 60 * 60 * 1000; // 24小时
-    this.taskCounter = 0;
     this.isInitialized = false;
   }
 
   /**
-   * 初始化文件存储（本地环境或降级时使用）
-   */
-  initFileStorage() {
-    this.storageType = 'file';
-    const tempDir = process.env.NETLIFY ? '/tmp' : os.tmpdir();
-    this.tasksFilePath = path.join(tempDir, 'netlify_tasks.json');
-  }
-
-  /**
-   * 初始化任务管理器，加载并设置计数器
+   * 初始化数据库连接
    */
   async initialize() {
     if (this.isInitialized) return;
 
     try {
-      if (this.storageType === 'blobs') {
-        await this.initializeBlobs();
-      } else {
-        await this.initializeFile();
+      if (!this.databaseUrl) {
+        throw new Error('DATABASE_URL 环境变量未设置');
       }
+
+      this.sql = neon(this.databaseUrl);
+      
+      // 测试连接并确保表存在
+      await this.ensureTablesExist();
+      
+      this.isInitialized = true;
+      console.log('🔧 任务管理器初始化完成 (Neon PostgreSQL)');
     } catch (error) {
-      console.error('❌ 初始化失败:', error);
-      // 如果 Blobs 失败，降级到文件存储
-      if (this.storageType === 'blobs') {
-        console.log('🔄 降级到文件存储');
-        this.initFileStorage();
-        await this.initializeFile();
-      } else {
-        this.taskCounter = 0;
-      }
-    }
-    
-    this.isInitialized = true;
-    console.log(`🔧 任务管理器初始化完成 (${this.storageType})，当前计数器: ${this.taskCounter}`);
-  }
-
-  /**
-   * 初始化 Blobs 存储
-   */
-  async initializeBlobs() {
-    const { blobs } = await this.store.list();
-    if (blobs.length > 0) {
-      const maxCounter = blobs.reduce((max, blob) => {
-        const parts = blob.key.split('_');
-        if (parts.length >= 3) {
-          const counter = parseInt(parts[2], 10);
-          return isNaN(counter) ? max : Math.max(max, counter);
-        }
-        return max;
-      }, 0);
-      this.taskCounter = maxCounter;
-    } else {
-      this.taskCounter = 0;
+      console.error('❌ 数据库初始化失败:', error);
+      throw error;
     }
   }
 
   /**
-   * 初始化文件存储
+   * 确保必要的表存在
    */
-  async initializeFile() {
+  async ensureTablesExist() {
     try {
-      const tasks = await this.loadTasksFromFile();
-      if (Object.keys(tasks).length > 0) {
-        const maxCounter = Object.keys(tasks).reduce((max, taskId) => {
-          const parts = taskId.split('_');
-          if (parts.length >= 3) {
-            const counter = parseInt(parts[2], 10);
-            return isNaN(counter) ? max : Math.max(max, counter);
-          }
-          return max;
-        }, 0);
-        this.taskCounter = maxCounter;
-      } else {
-        this.taskCounter = 0;
-      }
-    } catch (error) {
-      console.warn('文件存储初始化失败:', error);
-      this.taskCounter = 0;
-    }
-  }
+      // 创建优化任务表（如果不存在）
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS optimization_tasks (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL DEFAULT 'optimization',
+          status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+          progress INTEGER DEFAULT 0,
+          message TEXT,
+          input_data JSONB,
+          results JSONB,
+          error_message TEXT,
+          execution_time INTEGER,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+      `;
 
-  /**
-   * 从文件加载任务数据
-   */
-  async loadTasksFromFile() {
-    try {
-      const data = await fs.readFile(this.tasksFilePath, 'utf8');
-      return JSON.parse(data);
-    } catch (error) {
-      return {};
-    }
-  }
+      // 创建索引以提高查询性能
+      await this.sql`
+        CREATE INDEX IF NOT EXISTS idx_optimization_tasks_status 
+        ON optimization_tasks(status)
+      `;
+      
+      await this.sql`
+        CREATE INDEX IF NOT EXISTS idx_optimization_tasks_created_at 
+        ON optimization_tasks(created_at DESC)
+      `;
 
-  /**
-   * 保存任务数据到文件
-   */
-  async saveTasksToFile(tasks) {
-    await fs.writeFile(this.tasksFilePath, JSON.stringify(tasks, null, 2));
+      console.log('✅ 数据库表结构检查完成');
+    } catch (error) {
+      console.error('❌ 创建数据库表失败:', error);
+      throw error;
+    }
   }
 
   /**
@@ -147,9 +92,8 @@ class TaskManager {
    */
   generateTaskId() {
     const timestamp = Date.now();
-    const counter = ++this.taskCounter;
-    const random = Math.floor(Math.random() * 900) + 100; // 3位随机数
-    return `task_${timestamp}_${counter}_${random}`;
+    const random = Math.floor(Math.random() * 900000) + 100000; // 6位随机数
+    return `task_${timestamp}_${random}`;
   }
 
   /**
@@ -161,30 +105,29 @@ class TaskManager {
 
       const taskId = this.generateTaskId();
       
-      const task = {
-        id: taskId,
-        type: 'optimization',
-        status: 'pending',
-        progress: 0,
-        message: '任务已创建，等待处理',
-        inputData: optimizationData,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        executionTime: null,
-        results: null,
-        error: null
-      };
+      const result = await this.sql`
+        INSERT INTO optimization_tasks (
+          id, type, status, progress, message, input_data, created_at, updated_at
+        ) VALUES (
+          ${taskId}, 
+          'optimization', 
+          'pending', 
+          0, 
+          '任务已创建，等待处理', 
+          ${JSON.stringify(optimizationData)}, 
+          NOW(), 
+          NOW()
+        )
+        RETURNING id
+      `;
 
-      if (this.storageType === 'blobs') {
-        await this.store.setJSON(taskId, task);
-      } else {
-        const tasks = await this.loadTasksFromFile();
-        tasks[taskId] = task;
-        await this.saveTasksToFile(tasks);
+      if (result.length === 0) {
+        throw new Error('任务创建失败');
       }
       
-      console.log(`✅ 创建优化任务: ${taskId} (${this.storageType})`);
+      console.log(`✅ 创建优化任务: ${taskId} (Neon PostgreSQL)`);
       
+      // 异步执行优化任务
       this.executeOptimizationTaskAsync(taskId, optimizationData);
       
       return taskId;
@@ -199,12 +142,45 @@ class TaskManager {
    */
   async getTask(taskId) {
     try {
-      if (this.storageType === 'blobs') {
-        return await this.store.get(taskId, { type: 'json' });
-      } else {
-        const tasks = await this.loadTasksFromFile();
-        return tasks[taskId] || null;
+      await this.initialize();
+      
+      const result = await this.sql`
+        SELECT 
+          id,
+          type,
+          status,
+          progress,
+          message,
+          input_data,
+          results,
+          error_message,
+          execution_time,
+          created_at,
+          updated_at
+        FROM optimization_tasks 
+        WHERE id = ${taskId}
+      `;
+
+      if (result.length === 0) {
+        return null;
       }
+
+      const task = result[0];
+      
+      // 转换数据格式以匹配前端期望
+      return {
+        id: task.id,
+        type: task.type,
+        status: task.status,
+        progress: task.progress,
+        message: task.message,
+        inputData: task.input_data,
+        results: task.results,
+        error: task.error_message,
+        executionTime: task.execution_time,
+        createdAt: task.created_at,
+        updatedAt: task.updated_at
+      };
     } catch (error) {
       console.error('❌ 获取任务失败:', error);
       return null;
@@ -218,25 +194,47 @@ class TaskManager {
     try {
       await this.initialize();
       
-      const task = await this.getTask(taskId);
-      if (!task) {
+      // 构建更新字段
+      const updateFields = {
+        status: status,
+        updated_at: new Date()
+      };
+
+      if (updates.progress !== undefined) {
+        updateFields.progress = updates.progress;
+      }
+      if (updates.message !== undefined) {
+        updateFields.message = updates.message;
+      }
+      if (updates.results !== undefined) {
+        updateFields.results = JSON.stringify(updates.results);
+      }
+      if (updates.error !== undefined) {
+        updateFields.error_message = updates.error;
+      }
+      if (updates.executionTime !== undefined) {
+        updateFields.execution_time = updates.executionTime;
+      }
+
+      const result = await this.sql`
+        UPDATE optimization_tasks 
+        SET 
+          status = ${updateFields.status},
+          progress = ${updateFields.progress || 0},
+          message = ${updateFields.message || ''},
+          results = ${updateFields.results || null},
+          error_message = ${updateFields.error_message || null},
+          execution_time = ${updateFields.execution_time || null},
+          updated_at = NOW()
+        WHERE id = ${taskId}
+        RETURNING id
+      `;
+
+      if (result.length === 0) {
         throw new Error(`任务 ${taskId} 不存在`);
       }
       
-      task.status = status;
-      task.updatedAt = new Date().toISOString();
-      
-      Object.assign(task, updates);
-      
-      if (this.storageType === 'blobs') {
-        await this.store.setJSON(taskId, task);
-      } else {
-        const tasks = await this.loadTasksFromFile();
-        tasks[taskId] = task;
-        await this.saveTasksToFile(tasks);
-      }
-      
-      console.log(`📝 更新任务状态: ${taskId} -> ${status} (${this.storageType})`);
+      console.log(`📝 更新任务状态: ${taskId} -> ${status} (Neon PostgreSQL)`);
     } catch (error) {
       console.error('❌ 更新任务状态失败:', error);
       throw error;
@@ -257,7 +255,15 @@ class TaskManager {
    * 设置任务结果
    */
   async setTaskResults(taskId, results) {
-    const executionTime = await this.calculateExecutionTime(taskId);
+    const task = await this.getTask(taskId);
+    if (!task) {
+      throw new Error(`任务 ${taskId} 不存在`);
+    }
+    
+    const startTime = new Date(task.createdAt).getTime();
+    const endTime = Date.now();
+    const executionTime = endTime - startTime;
+
     await this.updateTaskStatus(taskId, 'completed', {
       progress: 100,
       message: '优化完成',
@@ -270,24 +276,20 @@ class TaskManager {
    * 设置任务错误
    */
   async setTaskError(taskId, error) {
-    const executionTime = await this.calculateExecutionTime(taskId);
+    const task = await this.getTask(taskId);
+    if (!task) {
+      throw new Error(`任务 ${taskId} 不存在`);
+    }
+    
+    const startTime = new Date(task.createdAt).getTime();
+    const endTime = Date.now();
+    const executionTime = endTime - startTime;
+
     await this.updateTaskStatus(taskId, 'failed', {
       message: '优化失败',
       error: error.message || error,
       executionTime: executionTime
     });
-  }
-
-  /**
-   * 计算任务执行时间
-   */
-  async calculateExecutionTime(taskId) {
-    const task = await this.getTask(taskId);
-    if (!task) return null;
-    
-    const startTime = new Date(task.createdAt).getTime();
-    const endTime = Date.now();
-    return endTime - startTime;
   }
 
   /**
@@ -379,50 +381,53 @@ class TaskManager {
   }
 
   /**
-   * 获取所有任务(内部使用，谨慎)
-   */
-  async getAllTasks() {
-    const { blobs } = await this.store.list();
-    const tasks = {};
-    for (const blob of blobs) {
-      tasks[blob.key] = await this.store.get(blob.key, { type: 'json' });
-    }
-    return tasks;
-  }
-
-  /**
    * 获取任务列表（带过滤和排序）
    */
   async getTaskList(options = {}) {
-    const { limit = 20, status = null } = options;
-    
-    let taskList = [];
-    
-    if (this.storageType === 'blobs') {
-      const { blobs } = await this.store.list();
-      for (const blob of blobs) {
-        const task = await this.store.get(blob.key, { type: 'json' });
-        if (task) {
-          taskList.push(task);
-        }
+    try {
+      await this.initialize();
+      
+      const { limit = 20, status = null } = options;
+      
+      let query;
+      if (status) {
+        query = this.sql`
+          SELECT 
+            id, type, status, progress, message, 
+            execution_time, created_at, updated_at
+          FROM optimization_tasks 
+          WHERE status = ${status}
+          ORDER BY created_at DESC 
+          LIMIT ${limit}
+        `;
+      } else {
+        query = this.sql`
+          SELECT 
+            id, type, status, progress, message, 
+            execution_time, created_at, updated_at
+          FROM optimization_tasks 
+          ORDER BY created_at DESC 
+          LIMIT ${limit}
+        `;
       }
-    } else {
-      const tasks = await this.loadTasksFromFile();
-      taskList = Object.values(tasks);
+      
+      const result = await query;
+      
+      // 转换数据格式
+      return result.map(task => ({
+        id: task.id,
+        type: task.type,
+        status: task.status,
+        progress: task.progress,
+        message: task.message,
+        executionTime: task.execution_time,
+        createdAt: task.created_at,
+        updatedAt: task.updated_at
+      }));
+    } catch (error) {
+      console.error('❌ 获取任务列表失败:', error);
+      return [];
     }
-    
-    // 状态过滤
-    if (status) {
-      taskList = taskList.filter(task => task.status === status);
-    }
-    
-    // 按创建时间倒序
-    taskList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    
-    // 限制数量
-    taskList = taskList.slice(0, limit);
-    
-    return taskList;
   }
 
   /**
@@ -452,37 +457,18 @@ class TaskManager {
   async cleanupExpiredTasks() {
     try {
       await this.initialize();
-      const now = Date.now();
-      let cleanedCount = 0;
       
-      if (this.storageType === 'blobs') {
-        const { blobs } = await this.store.list();
-        for (const blob of blobs) {
-          const task = await this.store.get(blob.key, { type: 'json' });
-          if (task) {
-            const taskAge = now - new Date(task.createdAt).getTime();
-            if (taskAge > this.maxTaskAge) {
-              await this.store.delete(blob.key);
-              cleanedCount++;
-            }
-          }
-        }
-      } else {
-        const tasks = await this.loadTasksFromFile();
-        for (const [taskId, task] of Object.entries(tasks)) {
-          const taskAge = now - new Date(task.createdAt).getTime();
-          if (taskAge > this.maxTaskAge) {
-            delete tasks[taskId];
-            cleanedCount++;
-          }
-        }
-        if (cleanedCount > 0) {
-          await this.saveTasksToFile(tasks);
-        }
-      }
+      const result = await this.sql`
+        DELETE FROM optimization_tasks 
+        WHERE created_at < NOW() - INTERVAL '24 hours'
+        AND status IN ('completed', 'failed', 'cancelled')
+        RETURNING id
+      `;
+      
+      const cleanedCount = result.length;
       
       if (cleanedCount > 0) {
-        console.log(`🧹 清理了 ${cleanedCount} 个过期任务 (${this.storageType})`);
+        console.log(`🧹 清理了 ${cleanedCount} 个过期任务 (Neon PostgreSQL)`);
       }
       
       return cleanedCount;
