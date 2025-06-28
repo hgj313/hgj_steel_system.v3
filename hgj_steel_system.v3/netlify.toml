@@ -69,7 +69,7 @@
 [[redirects]]
   # 任务管理 - 获取单个任务
   from = "/api/task/:taskId"
-  to = "/.netlify/functions/tasks"
+  to = "/.netlify/functions/task"
   status = 200
 
 [[redirects]]
