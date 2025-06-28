@@ -488,6 +488,11 @@ export const useAsyncOptimization = () => {
 
   // 开始轮询任务状态
   const startPolling = useCallback((taskId: string) => {
+    if (!taskId || taskId === 'undefined') {
+      console.error('无效的taskId，轮询已中止:', taskId);
+      return;
+    }
+
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
     }
@@ -547,7 +552,7 @@ export const useAsyncOptimization = () => {
 
       const result = await response.json();
 
-      if (result.success) {
+      if (result.success && result.taskId) {
         console.log('✅ 任务创建成功:', result.taskId);
         
         setCurrentTask({
@@ -565,13 +570,14 @@ export const useAsyncOptimization = () => {
         
         return { success: true, taskId: result.taskId };
       } else {
-        console.error('❌ 任务创建失败:', result.error);
+        const errorMsg = result.error || '任务创建失败，但未返回任务ID';
+        console.error('❌ 任务创建失败:', errorMsg);
         setCurrentTask(prev => ({
           ...prev,
           status: 'failed',
-          error: result.error
+          error: errorMsg
         }));
-        return { success: false, error: result.error };
+        return { success: false, error: errorMsg };
       }
     } catch (error) {
       console.error('❌ 提交优化任务异常:', error);

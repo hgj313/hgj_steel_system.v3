@@ -192,12 +192,10 @@ const AppContent: React.FC = () => {
   const { isDataLoaded } = useOptimizationContext();
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   
-  // 添加一次性的localStorage清理逻辑
   useEffect(() => {
     try {
       const history = localStorage.getItem('hgj_optimization_history');
       if (history) {
-        // 尝试解析，如果失败或者过大，则清理
         JSON.parse(history);
       }
     } catch (error) {
@@ -205,14 +203,12 @@ const AppContent: React.FC = () => {
       localStorage.removeItem('hgj_optimization_history');
       console.log('✅ 旧的历史记录已清理');
     }
-  }, []); // 空依赖数组确保只运行一次
+  }, []);
 
-  // 主题切换
   const toggleTheme = () => {
     setIsDarkMode(prev => !prev);
   };
 
-  // 保存主题设置
   useEffect(() => {
     try {
       localStorage.setItem('hgj-steel-theme', JSON.stringify(isDarkMode));
@@ -226,127 +222,84 @@ const AppContent: React.FC = () => {
     algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
     token: {
       colorPrimary: currentTheme.colors.primary,
-      // ... other theme tokens
     },
   };
 
-  // 应用程序加载状态
-  if (!isDataLoaded) {
-    return (
-      <ConfigProvider theme={antdTheme}>
-        <ThemeProvider theme={currentTheme}>
-          <GlobalStyle theme={currentTheme} />
-          <Router>
-            <Layout style={{ minHeight: '100vh' }}>
-              <Sidebar 
-                collapsed={sidebarCollapsed}
-                onCollapse={setSidebarCollapsed}
-              />
-              <Layout>
-                <Header 
-                  isDarkMode={isDarkMode}
-                  onThemeToggle={toggleTheme}
-                  sidebarCollapsed={sidebarCollapsed}
-                  onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+  // The main layout is now defined once and used in all states.
+  const mainLayout = (
+    <Layout style={{ minHeight: '100vh' }}>
+      <Sidebar 
+        collapsed={sidebarCollapsed}
+        onCollapse={setSidebarCollapsed}
+      />
+      <Layout>
+        <Header 
+          isDarkMode={isDarkMode}
+          onThemeToggle={toggleTheme}
+          sidebarCollapsed={sidebarCollapsed}
+          onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
+        <Content>
+          {isDataLoaded ? (
+            <AnimatePresence mode="wait">
+              <Suspense fallback={
+                <ContentWrapper>
+                  <LoadingContainer>
+                    <LoadingSpinner
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                    />
+                  </LoadingContainer>
+                </ContentWrapper>
+              }>
+                <Routes>
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="/optimization" element={<OptimizationPage />} />
+                  <Route path="/results" element={<ResultsPage />} />
+                  <Route path="/history" element={<HistoryPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                </Routes>
+              </Suspense>
+            </AnimatePresence>
+          ) : (
+            <ContentWrapper>
+              <LoadingContainer
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <LoadingSpinner
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                 />
-                <Content>
-                  <ContentWrapper
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <LoadingContainer
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                    >
-                      <LoadingSpinner
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                      />
-                      <LoadingText
-                        initial={{ y: 20, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        transition={{ delay: 0.2 }}
-                      >
-                        钢材采购优化系统 V3.0
-                      </LoadingText>
-                      <LoadingSubText
-                        initial={{ y: 20, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        transition={{ delay: 0.4 }}
-                      >
-                        正在初始化模块化架构和余料系统...
-                      </LoadingSubText>
-                    </LoadingContainer>
-                  </ContentWrapper>
-                </Content>
-              </Layout>
-            </Layout>
-          </Router>
-        </ThemeProvider>
-      </ConfigProvider>
-    );
-  }
+                <LoadingText
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  钢材采购优化系统 V3.0
+                </LoadingText>
+                <LoadingSubText
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.4 }}
+                >
+                  正在初始化模块化架构和余料系统...
+                </LoadingSubText>
+              </LoadingContainer>
+            </ContentWrapper>
+          )}
+        </Content>
+      </Layout>
+    </Layout>
+  );
   
   return (
     <ConfigProvider theme={antdTheme}>
       <ThemeProvider theme={currentTheme}>
         <GlobalStyle theme={currentTheme} />
         <Router>
-          <Suspense fallback={
-            <Layout style={{ minHeight: '100vh' }}>
-              <Sidebar 
-                collapsed={false}
-                onCollapse={() => {}}
-              />
-              <Layout>
-                <Header 
-                  isDarkMode={isDarkMode}
-                  onThemeToggle={() => {}}
-                  sidebarCollapsed={false}
-                  onSidebarToggle={() => {}}
-                />
-                <Content>
-                  <ContentWrapper>
-                    <LoadingContainer>
-                      <LoadingSpinner
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                      />
-                    </LoadingContainer>
-                  </ContentWrapper>
-                </Content>
-              </Layout>
-            </Layout>
-          }>
-            <Layout style={{ minHeight: '100vh' }}>
-              <Sidebar 
-                collapsed={sidebarCollapsed}
-                onCollapse={setSidebarCollapsed}
-              />
-              <Layout>
-                <Header 
-                  isDarkMode={isDarkMode}
-                  onThemeToggle={toggleTheme}
-                  sidebarCollapsed={sidebarCollapsed}
-                  onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-                />
-                <Content>
-                  <AnimatePresence mode="wait">
-                    <Routes>
-                      <Route path="/" element={<HomePage />} />
-                      <Route path="/optimization" element={<OptimizationPage />} />
-                      <Route path="/results" element={<ResultsPage />} />
-                      <Route path="/history" element={<HistoryPage />} />
-                      <Route path="/settings" element={<SettingsPage />} />
-                    </Routes>
-                  </AnimatePresence>
-                </Content>
-              </Layout>
-            </Layout>
-          </Suspense>
+          {mainLayout}
         </Router>
       </ThemeProvider>
     </ConfigProvider>
