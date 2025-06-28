@@ -1,10 +1,13 @@
 /**
  * Netlify异步任务管理器
  * 负责任务的创建、存储、状态更新和异步执行
- * 使用Netlify Blobs作为持久化存储
+ * 使用Netlify Blobs作为持久化存储，本地环境降级到内存存储
  */
 
 const { getStore } = require('@netlify/blobs');
+const fs = require('fs').promises;
+const path = require('path');
+const os = require('os');
 
 // 动态导入优化服务
 let OptimizationService;
@@ -16,10 +19,35 @@ try {
 
 class TaskManager {
   constructor() {
-    this.store = getStore('optimization-tasks');
+    // 检测运行环境
+    this.isNetlifyEnvironment = !!process.env.NETLIFY;
+    
+    if (this.isNetlifyEnvironment) {
+      try {
+        this.store = getStore('optimization-tasks');
+        this.storageType = 'blobs';
+        console.log('🔧 使用 Netlify Blobs 存储');
+      } catch (error) {
+        console.warn('⚠️ Netlify Blobs 初始化失败，降级到文件存储:', error);
+        this.initFileStorage();
+      }
+    } else {
+      console.log('🔧 本地环境，使用文件存储');
+      this.initFileStorage();
+    }
+    
     this.maxTaskAge = 24 * 60 * 60 * 1000; // 24小时
     this.taskCounter = 0;
     this.isInitialized = false;
+  }
+
+  /**
+   * 初始化文件存储（本地环境或降级时使用）
+   */
+  initFileStorage() {
+    this.storageType = 'file';
+    const tempDir = process.env.NETLIFY ? '/tmp' : os.tmpdir();
+    this.tasksFilePath = path.join(tempDir, 'netlify_tasks.json');
   }
 
   /**
@@ -29,10 +57,56 @@ class TaskManager {
     if (this.isInitialized) return;
 
     try {
-      const { blobs } = await this.store.list();
-      if (blobs.length > 0) {
-        const maxCounter = blobs.reduce((max, blob) => {
-          const parts = blob.key.split('_');
+      if (this.storageType === 'blobs') {
+        await this.initializeBlobs();
+      } else {
+        await this.initializeFile();
+      }
+    } catch (error) {
+      console.error('❌ 初始化失败:', error);
+      // 如果 Blobs 失败，降级到文件存储
+      if (this.storageType === 'blobs') {
+        console.log('🔄 降级到文件存储');
+        this.initFileStorage();
+        await this.initializeFile();
+      } else {
+        this.taskCounter = 0;
+      }
+    }
+    
+    this.isInitialized = true;
+    console.log(`🔧 任务管理器初始化完成 (${this.storageType})，当前计数器: ${this.taskCounter}`);
+  }
+
+  /**
+   * 初始化 Blobs 存储
+   */
+  async initializeBlobs() {
+    const { blobs } = await this.store.list();
+    if (blobs.length > 0) {
+      const maxCounter = blobs.reduce((max, blob) => {
+        const parts = blob.key.split('_');
+        if (parts.length >= 3) {
+          const counter = parseInt(parts[2], 10);
+          return isNaN(counter) ? max : Math.max(max, counter);
+        }
+        return max;
+      }, 0);
+      this.taskCounter = maxCounter;
+    } else {
+      this.taskCounter = 0;
+    }
+  }
+
+  /**
+   * 初始化文件存储
+   */
+  async initializeFile() {
+    try {
+      const tasks = await this.loadTasksFromFile();
+      if (Object.keys(tasks).length > 0) {
+        const maxCounter = Object.keys(tasks).reduce((max, taskId) => {
+          const parts = taskId.split('_');
           if (parts.length >= 3) {
             const counter = parseInt(parts[2], 10);
             return isNaN(counter) ? max : Math.max(max, counter);
@@ -44,12 +118,28 @@ class TaskManager {
         this.taskCounter = 0;
       }
     } catch (error) {
-      console.warn('初始化任务计数器失败，可能存储为空:', error);
+      console.warn('文件存储初始化失败:', error);
       this.taskCounter = 0;
     }
-    
-    this.isInitialized = true;
-    console.log(`🔧 任务管理器初始化完成，当前计数器: ${this.taskCounter}`);
+  }
+
+  /**
+   * 从文件加载任务数据
+   */
+  async loadTasksFromFile() {
+    try {
+      const data = await fs.readFile(this.tasksFilePath, 'utf8');
+      return JSON.parse(data);
+    } catch (error) {
+      return {};
+    }
+  }
+
+  /**
+   * 保存任务数据到文件
+   */
+  async saveTasksToFile(tasks) {
+    await fs.writeFile(this.tasksFilePath, JSON.stringify(tasks, null, 2));
   }
 
   /**
@@ -66,58 +156,91 @@ class TaskManager {
    * 创建新的优化任务
    */
   async createOptimizationTask(optimizationData) {
-    await this.initialize();
+    try {
+      await this.initialize();
 
-    const taskId = this.generateTaskId();
-    
-    const task = {
-      id: taskId,
-      type: 'optimization',
-      status: 'pending',
-      progress: 0,
-      message: '任务已创建，等待处理',
-      inputData: optimizationData,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      executionTime: null,
-      results: null,
-      error: null
-    };
+      const taskId = this.generateTaskId();
+      
+      const task = {
+        id: taskId,
+        type: 'optimization',
+        status: 'pending',
+        progress: 0,
+        message: '任务已创建，等待处理',
+        inputData: optimizationData,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        executionTime: null,
+        results: null,
+        error: null
+      };
 
-    await this.store.setJSON(taskId, task);
-    
-    console.log(`✅ 创建优化任务: ${taskId}`);
-    
-    this.executeOptimizationTaskAsync(taskId, optimizationData);
-    
-    return taskId;
+      if (this.storageType === 'blobs') {
+        await this.store.setJSON(taskId, task);
+      } else {
+        const tasks = await this.loadTasksFromFile();
+        tasks[taskId] = task;
+        await this.saveTasksToFile(tasks);
+      }
+      
+      console.log(`✅ 创建优化任务: ${taskId} (${this.storageType})`);
+      
+      this.executeOptimizationTaskAsync(taskId, optimizationData);
+      
+      return taskId;
+    } catch (error) {
+      console.error('❌ 创建任务失败:', error);
+      throw new Error(`任务创建失败: ${error.message || '未知错误'}`);
+    }
   }
 
   /**
    * 获取任务信息
    */
   async getTask(taskId) {
-    return await this.store.get(taskId, { type: 'json' });
+    try {
+      if (this.storageType === 'blobs') {
+        return await this.store.get(taskId, { type: 'json' });
+      } else {
+        const tasks = await this.loadTasksFromFile();
+        return tasks[taskId] || null;
+      }
+    } catch (error) {
+      console.error('❌ 获取任务失败:', error);
+      return null;
+    }
   }
 
   /**
    * 更新任务状态
    */
   async updateTaskStatus(taskId, status, updates = {}) {
-    await this.initialize();
-    
-    const task = await this.getTask(taskId);
-    if (!task) {
-      throw new Error(`任务 ${taskId} 不存在`);
+    try {
+      await this.initialize();
+      
+      const task = await this.getTask(taskId);
+      if (!task) {
+        throw new Error(`任务 ${taskId} 不存在`);
+      }
+      
+      task.status = status;
+      task.updatedAt = new Date().toISOString();
+      
+      Object.assign(task, updates);
+      
+      if (this.storageType === 'blobs') {
+        await this.store.setJSON(taskId, task);
+      } else {
+        const tasks = await this.loadTasksFromFile();
+        tasks[taskId] = task;
+        await this.saveTasksToFile(tasks);
+      }
+      
+      console.log(`📝 更新任务状态: ${taskId} -> ${status} (${this.storageType})`);
+    } catch (error) {
+      console.error('❌ 更新任务状态失败:', error);
+      throw error;
     }
-    
-    task.status = status;
-    task.updatedAt = new Date().toISOString();
-    
-    Object.assign(task, updates);
-    
-    await this.store.setJSON(taskId, task);
-    console.log(`📝 更新任务状态: ${taskId} -> ${status}`);
   }
 
   /**
@@ -272,15 +395,20 @@ class TaskManager {
    */
   async getTaskList(options = {}) {
     const { limit = 20, status = null } = options;
-    const { blobs } = await this.store.list();
     
     let taskList = [];
-    for (const blob of blobs) {
-      // 为了效率，我们可以只获取元数据，但这里为了简单起见，获取完整任务
-      const task = await this.store.get(blob.key, { type: 'json' });
-      if (task) {
-        taskList.push(task);
+    
+    if (this.storageType === 'blobs') {
+      const { blobs } = await this.store.list();
+      for (const blob of blobs) {
+        const task = await this.store.get(blob.key, { type: 'json' });
+        if (task) {
+          taskList.push(task);
+        }
       }
+    } else {
+      const tasks = await this.loadTasksFromFile();
+      taskList = Object.values(tasks);
     }
     
     // 状态过滤
@@ -322,28 +450,46 @@ class TaskManager {
    * 清理过期任务
    */
   async cleanupExpiredTasks() {
-    await this.initialize();
-    const { blobs } = await this.store.list();
-    const now = Date.now();
-    let cleanedCount = 0;
-    
-    for (const blob of blobs) {
-      // 优化：可以直接检查元数据中的时间戳，如果存储了的话
-      const task = await this.store.get(blob.key, { type: 'json' });
-      if (task) {
-        const taskAge = now - new Date(task.createdAt).getTime();
-        if (taskAge > this.maxTaskAge) {
-          await this.store.delete(blob.key);
-          cleanedCount++;
+    try {
+      await this.initialize();
+      const now = Date.now();
+      let cleanedCount = 0;
+      
+      if (this.storageType === 'blobs') {
+        const { blobs } = await this.store.list();
+        for (const blob of blobs) {
+          const task = await this.store.get(blob.key, { type: 'json' });
+          if (task) {
+            const taskAge = now - new Date(task.createdAt).getTime();
+            if (taskAge > this.maxTaskAge) {
+              await this.store.delete(blob.key);
+              cleanedCount++;
+            }
+          }
+        }
+      } else {
+        const tasks = await this.loadTasksFromFile();
+        for (const [taskId, task] of Object.entries(tasks)) {
+          const taskAge = now - new Date(task.createdAt).getTime();
+          if (taskAge > this.maxTaskAge) {
+            delete tasks[taskId];
+            cleanedCount++;
+          }
+        }
+        if (cleanedCount > 0) {
+          await this.saveTasksToFile(tasks);
         }
       }
+      
+      if (cleanedCount > 0) {
+        console.log(`🧹 清理了 ${cleanedCount} 个过期任务 (${this.storageType})`);
+      }
+      
+      return cleanedCount;
+    } catch (error) {
+      console.error('❌ 清理过期任务失败:', error);
+      return 0;
     }
-    
-    if (cleanedCount > 0) {
-      console.log(`🧹 清理了 ${cleanedCount} 个过期任务`);
-    }
-    
-    return cleanedCount;
   }
 }
 
