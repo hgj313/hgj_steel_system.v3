@@ -17,7 +17,7 @@ try {
 class TaskManager {
   constructor() {
     // 从环境变量获取数据库连接字符串
-    this.databaseUrl = process.env.DATABASE_URL;
+    this.databaseUrl = process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL;
     this.sql = null;
     this.maxTaskAge = 24 * 60 * 60 * 1000; // 24小时
     this.isInitialized = false;
