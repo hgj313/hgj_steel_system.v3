@@ -218,7 +218,6 @@ class TaskManager {
     try {
       await this.initialize();
       
-      // 构建更新字段
       const updateFields = {
         status: status,
         updated_at: new Date()
@@ -240,27 +239,23 @@ class TaskManager {
         updateFields.execution_time = updates.executionTime;
       }
 
-      const result = await this.sql`
+      // 使用COALESCE确保即使传入null或undefined也不会覆盖已有值
+      await this.sql`
         UPDATE optimization_tasks 
         SET 
           status = ${updateFields.status},
-          progress = ${updateFields.progress || 0},
-          message = ${updateFields.message || ''},
-          results = ${updateFields.results || null},
-          error_message = ${updateFields.error_message || null},
-          execution_time = ${updateFields.execution_time || null},
-          updated_at = NOW()
+          progress = COALESCE(${updateFields.progress}, progress),
+          message = COALESCE(${updateFields.message}, message),
+          results = COALESCE(${updateFields.results}, results),
+          error_message = COALESCE(${updateFields.error_message}, error_message),
+          execution_time = COALESCE(${updateFields.execution_time}, execution_time),
+          updated_at = ${updateFields.updated_at}
         WHERE id = ${taskId}
-        RETURNING id
       `;
 
-      if (result.length === 0) {
-        throw new Error(`任务 ${taskId} 不存在`);
-      }
-      
       console.log(`📝 更新任务状态: ${taskId} -> ${status} (Neon PostgreSQL)`);
     } catch (error) {
-      console.error('❌ 更新任务状态失败:', error);
+      console.error(`❌ 更新任务[${taskId}]状态失败:`, error);
       throw error;
     }
   }
@@ -299,81 +294,87 @@ class TaskManager {
   /**
    * 设置任务错误
    */
-  async setTaskError(taskId, error) {
-    const task = await this.getTask(taskId);
-    if (!task) {
-      throw new Error(`任务 ${taskId} 不存在`);
+  async setTaskError(taskId, error, executionTime = null) {
+    try {
+      await this.initialize();
+      const updates = { 
+        error,
+        ...(executionTime && { executionTime })
+      };
+      await this.updateTaskStatus(taskId, 'failed', updates);
+      console.log(`[${taskId}] 任务已被标记为失败: ${error}`);
+    } catch (dbError) {
+      console.error(`[${taskId}] 更新任务错误状态失败:`, dbError);
     }
-    
-    const startTime = new Date(task.createdAt).getTime();
-    const endTime = Date.now();
-    const executionTime = endTime - startTime;
-
-    await this.updateTaskStatus(taskId, 'failed', {
-      message: '优化失败',
-      error: error.message || error,
-      executionTime: executionTime
-    });
   }
 
   /**
-   * 异步执行优化任务（不阻塞主线程）
-   * Netlify Functions 优化版本
+   * 异步执行优化任务
+   * 这是一个非阻塞的调用
    */
   executeOptimizationTaskAsync(taskId, optimizationData) {
-    // 使用 Promise.resolve 确保在 Netlify 环境中正确执行
-    Promise.resolve().then(async () => {
-      await this.executeOptimizationTask(taskId, optimizationData);
-    }).catch(error => {
-      console.error(`💥 异步执行失败: ${taskId}`, error);
-      this.setTaskError(taskId, error).catch(console.error);
+    // 立即返回，不等待执行完成
+    this.executeOptimizationTask(taskId, optimizationData).catch(error => {
+      console.error(`[${taskId}] 异步任务执行的顶层捕获:`, error);
+      // 确保即使出现意外错误，也尝试将任务标记为失败
+      this.setTaskError(taskId, `一个意外的错误发生: ${error.message}`).catch(console.error);
     });
   }
 
   /**
-   * 执行优化任务的核心逻辑
+   * 执行优化任务的实际逻辑
    */
   async executeOptimizationTask(taskId, optimizationData) {
-    try {
-      console.log(`🚀 开始执行优化任务: ${taskId}`);
-      console.log(`📊 输入数据 - 设计钢材: ${optimizationData.designSteels?.length || 0}条`);
-      console.log(`📊 输入数据 - 模数钢材: ${optimizationData.moduleSteels?.length || 0}条`);
-      
-      // 更新状态为运行中
-      await this.updateTaskProgress(taskId, 10, '正在初始化优化器...');
-      
-      // 获取优化服务实例
-      console.log(`🔧 正在获取优化服务实例...`);
-      const service = this.getOptimizationService();
-      console.log(`✅ 优化服务实例获取成功`);
-      
-      // 模拟进度更新
-      await this.updateTaskProgress(taskId, 20, '正在解析输入数据...');
-      
-      // 执行优化计算
-      await this.updateTaskProgress(taskId, 30, '正在计算最优切割方案...');
-      
-      console.log(`🧮 开始执行优化计算...`);
-      const result = await service.optimizeSteel(optimizationData);
-      console.log(`🧮 优化计算完成，结果:`, result.success ? '成功' : '失败');
-      
-      if (result.success) {
-        console.log(`✅ 优化任务完成: ${taskId}`);
-        console.log('执行时间:', result.executionTime + 'ms');
-        console.log('总损耗率:', result.result?.totalLossRate + '%');
+    console.log(`[${taskId}] 开始执行优化任务...`);
+    const startTime = Date.now();
 
-        // 保存优化结果
-        await this.setTaskResults(taskId, result.result);
-        
-      } else {
-        console.log(`❌ 优化任务失败: ${taskId}`, result.error);
-        await this.setTaskError(taskId, new Error(result.error || '优化计算失败'));
-      }
+    try {
+      // 确保在异步执行上下文中初始化
+      await this.initialize();
+
+      // 步骤 1: 更新任务为"运行中"，进度10%
+      console.log(`[${taskId}] 步骤 1/5: 更新任务状态为 'running', 进度 10%`);
+      await this.updateTaskStatus(taskId, 'running', {
+        progress: 10,
+        message: '优化算法正在启动...'
+      });
+
+      // 步骤 2: 获取优化服务
+      console.log(`[${taskId}] 步骤 2/5: 获取 OptimizationService`);
+      const service = this.getOptimizationService();
+      console.log(`[${taskId}] OptimizationService 获取成功`);
+
+      // 步骤 3: 定义进度回调
+      const progressCallback = async (progress, message) => {
+        // 防止进度从10%回退到0%
+        const newProgress = Math.max(10, Math.round(progress));
+        console.log(`[${taskId}] 进度更新: ${newProgress}% - ${message}`);
+        await this.updateTaskProgress(taskId, newProgress, message);
+      };
+
+      // 步骤 4: 运行优化算法
+      console.log(`[${taskId}] 步骤 3/5: 调用 service.run()`);
+      const results = await service.run(optimizationData, progressCallback);
+      console.log(`[${taskId}] service.run() 完成`);
       
+      const executionTime = Date.now() - startTime;
+
+      // 步骤 5: 设置最终结果
+      console.log(`[${taskId}] 步骤 4/5: 设置任务结果`);
+      await this.setTaskResults(taskId, {
+        ...results,
+        executionTime: `${(executionTime / 1000).toFixed(2)}s`
+      });
+      console.log(`[${taskId}] 步骤 5/5: 任务成功完成`);
+
     } catch (error) {
-      console.error(`💥 执行优化任务异常: ${taskId}`, error);
-      console.error(`💥 错误堆栈:`, error.stack);
-      await this.setTaskError(taskId, error);
+      const executionTime = Date.now() - startTime;
+      console.error(`[${taskId}] 优化任务执行失败:`, error);
+      await this.setTaskError(
+        taskId, 
+        `算法执行失败: ${error.message}`,
+        executionTime
+      );
     }
   }
 
