@@ -327,7 +327,8 @@ class TaskManager {
   async executeOptimizationTask(taskId, optimizationData) {
     console.log(`[${taskId}] 开始执行优化任务...`);
     const startTime = Date.now();
-
+    
+    // 首要任务：确保无论发生什么，我们都能捕获顶层错误
     try {
       // 确保在异步执行上下文中初始化
       await this.initialize();
@@ -369,12 +370,19 @@ class TaskManager {
 
     } catch (error) {
       const executionTime = Date.now() - startTime;
+      const errorMessage = `算法执行在顶层捕获到致命错误: ${error.message}. Stack: ${error.stack}`;
       console.error(`[${taskId}] 优化任务执行失败:`, error);
-      await this.setTaskError(
-        taskId, 
-        `算法执行失败: ${error.message}`,
-        executionTime
-      );
+      
+      // 无论如何都要尝试更新数据库中的任务状态
+      try {
+        await this.setTaskError(
+          taskId, 
+          errorMessage,
+          executionTime
+        );
+      } catch (dbError) {
+        console.error(`[${taskId}] 在捕获到执行错误后，更新数据库也失败了:`, dbError);
+      }
     }
   }
 
