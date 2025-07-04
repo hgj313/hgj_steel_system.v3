@@ -41,12 +41,21 @@ exports.handler = async (event, context) => {
     console.log('设计钢材数量:', requestData.designSteels?.length || 0);
     console.log('模数钢材数量:', requestData.moduleSteels?.length || 0);
 
-    // 创建异步任务
-    const taskId = await taskManager.createOptimizationTask(requestData);
+    // 步骤1：在数据库中创建异步任务，状态为'pending'
+    const taskId = await taskManager.createPendingTask(requestData);
     
-    // 立即返回taskId，不等待优化完成
+    // 步骤2：异步调用后台函数来执行耗时任务
+    // 注意：这里没有 'await'，主函数会立即返回
+    context.callbackWaitsForEmptyEventLoop = false;
+    context.clientContext.functions.invoke('optimization-worker-background', {
+      body: JSON.stringify({ taskId, optimizationData: requestData })
+    });
+    
+    console.log(`[${taskId}] 已成功调用后台工作者函数`);
+
+    // 步骤3：立即返回taskId，让前端可以开始轮询
     return {
-      statusCode: 200,
+      statusCode: 202, // 202 Accepted 表示请求已接受，正在处理
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*'

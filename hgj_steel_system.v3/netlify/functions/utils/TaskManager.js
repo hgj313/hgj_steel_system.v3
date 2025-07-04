@@ -121,9 +121,9 @@ class TaskManager {
   }
 
   /**
-   * 创建新的优化任务
+   * 仅创建待处理的任务记录，不执行
    */
-  async createOptimizationTask(optimizationData) {
+  async createPendingTask(optimizationData) {
     try {
       await this.initialize();
 
@@ -137,7 +137,7 @@ class TaskManager {
           'optimization', 
           'pending', 
           0, 
-          '任务已创建，等待处理', 
+          '任务已创建，等待后台工作者处理', 
           ${JSON.stringify(optimizationData)}, 
           NOW(), 
           NOW()
@@ -149,11 +149,7 @@ class TaskManager {
         throw new Error('任务创建失败');
       }
       
-      console.log(`✅ 创建优化任务: ${taskId} (Neon PostgreSQL)`);
-      
-      // 异步执行优化任务
-      this.executeOptimizationTaskAsync(taskId, optimizationData);
-      
+      console.log(`✅ 创建待处理任务: ${taskId} (Neon PostgreSQL)`);
       return taskId;
     } catch (error) {
       console.error('❌ 创建任务失败:', error);
