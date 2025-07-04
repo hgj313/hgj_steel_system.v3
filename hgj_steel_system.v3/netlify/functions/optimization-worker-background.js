@@ -3,17 +3,9 @@
  * 负责执行耗时长的钢材优化计算
  */
 const TaskManager = require('./utils/TaskManager');
-const path = require('path');
 
-// 动态导入优化服务
-let OptimizationService;
-try {
-  const servicePath = path.resolve(process.cwd(), 'api', 'services', 'OptimizationService.js');
-  OptimizationService = require(servicePath);
-} catch (error) {
-  // 如果绝对路径失败，尝试相对路径
-  OptimizationService = require('../../../api/services/OptimizationService');
-}
+// 使用精确的相对路径，确保在任何环境下都能可靠地加载模块
+const OptimizationService = require('../../api/services/OptimizationService');
 
 exports.handler = async (event, context) => {
   const taskManager = new TaskManager();

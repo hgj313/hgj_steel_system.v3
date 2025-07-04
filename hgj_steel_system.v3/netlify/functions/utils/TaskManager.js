@@ -1,42 +1,8 @@
 /**
  * Netlify异步任务管理器 - Neon PostgreSQL版本
- * 负责任务的创建、存储、状态更新和异步执行
- * 使用Neon PostgreSQL作为持久化存储
- * 完整支持原始优化系统功能
+ * 负责任务的创建、存储、状态更新
  */
-
 const { neon } = require('@neondatabase/serverless');
-const path = require('path');
-
-// 动态导入优化服务 - 使用绝对路径和更强的错误处理
-let OptimizationService = null;
-let optimizationServiceError = null;
-
-// 尝试加载完整的优化服务
-try {
-  console.log('🔍 尝试加载完整的 OptimizationService...');
-  
-  // 使用绝对路径从项目根目录加载
-  const servicePath = path.resolve(process.cwd(), 'api', 'services', 'OptimizationService.js');
-  console.log(`📂 服务路径: ${servicePath}`);
-  
-  OptimizationService = require(servicePath);
-  console.log('✅ OptimizationService 加载成功');
-} catch (error) {
-  console.warn('⚠️ OptimizationService 加载失败:', error.message);
-  optimizationServiceError = error;
-  
-  // 尝试相对路径加载
-  try {
-    console.log('🔄 尝试相对路径加载...');
-    OptimizationService = require('../../../api/services/OptimizationService');
-    console.log('✅ OptimizationService 相对路径加载成功');
-    optimizationServiceError = null;
-  } catch (relativeError) {
-    console.warn('⚠️ 相对路径加载也失败:', relativeError.message);
-    optimizationServiceError = relativeError;
-  }
-}
 
 class TaskManager {
   constructor() {
@@ -121,9 +87,9 @@ class TaskManager {
   }
 
   /**
-   * 仅创建待处理的任务记录，不执行
+   * 创建新的优化任务
    */
-  async createPendingTask(optimizationData) {
+  async createOptimizationTask(optimizationData) {
     try {
       await this.initialize();
 
@@ -137,7 +103,7 @@ class TaskManager {
           'optimization', 
           'pending', 
           0, 
-          '任务已创建，等待后台工作者处理', 
+          '任务已创建，等待处理', 
           ${JSON.stringify(optimizationData)}, 
           NOW(), 
           NOW()
@@ -149,7 +115,11 @@ class TaskManager {
         throw new Error('任务创建失败');
       }
       
-      console.log(`✅ 创建待处理任务: ${taskId} (Neon PostgreSQL)`);
+      console.log(`✅ 创建优化任务: ${taskId} (Neon PostgreSQL)`);
+      
+      // 异步执行优化任务
+      this.executeOptimizationTaskAsync(taskId, optimizationData);
+      
       return taskId;
     } catch (error) {
       console.error('❌ 创建任务失败:', error);
@@ -380,74 +350,6 @@ class TaskManager {
         console.error(`[${taskId}] 在捕获到执行错误后，更新数据库也失败了:`, dbError);
       }
     }
-  }
-
-  /**
-   * 获取优化服务实例
-   * 优先使用完整的 OptimizationService，确保功能完整性
-   */
-  getOptimizationService() {
-    console.log(`🔍 检查 OptimizationService 可用性...`);
-    
-    if (OptimizationService && !optimizationServiceError) {
-      console.log(`✅ 使用完整的 OptimizationService`);
-      try {
-        const service = new OptimizationService();
-        console.log(`🎯 完整优化服务实例化成功`);
-        return service;
-      } catch (error) {
-        console.error(`❌ 创建 OptimizationService 实例失败:`, error);
-        console.error(`📋 详细错误信息:`, error.stack);
-        
-        // 记录依赖加载问题的详细信息
-        this.logDependencyDiagnostics(error);
-        
-        throw new Error(`完整优化服务不可用: ${error.message}`);
-      }
-    } else {
-      console.error(`❌ OptimizationService 不可用`);
-      if (optimizationServiceError) {
-        console.error(`📋 加载错误详情:`, optimizationServiceError.message);
-        console.error(`📋 错误堆栈:`, optimizationServiceError.stack);
-        this.logDependencyDiagnostics(optimizationServiceError);
-      }
-      
-      throw new Error(`完整优化服务不可用，请检查依赖配置`);
-    }
-  }
-
-  /**
-   * 记录依赖诊断信息
-   */
-  logDependencyDiagnostics(error) {
-    console.log(`\n🔍 === 依赖诊断信息 ===`);
-    console.log(`📂 当前工作目录: ${process.cwd()}`);
-    console.log(`🌐 Node.js 版本: ${process.version}`);
-    console.log(`⚙️ 运行环境: ${process.env.NODE_ENV || 'unknown'}`);
-    console.log(`🔧 Netlify 环境: ${process.env.NETLIFY ? 'Yes' : 'No'}`);
-    
-    if (error.code === 'MODULE_NOT_FOUND') {
-      console.log(`❌ 模块未找到错误: ${error.message}`);
-      
-      // 尝试检查文件是否存在
-      const fs = require('fs');
-      const possiblePaths = [
-        path.resolve(process.cwd(), 'api', 'services', 'OptimizationService.js'),
-        path.resolve(process.cwd(), 'core', 'optimizer', 'SteelOptimizerV3.js'),
-        path.resolve(process.cwd(), 'api', 'types', 'index.js')
-      ];
-      
-      possiblePaths.forEach(filePath => {
-        try {
-          const exists = fs.existsSync(filePath);
-          console.log(`📁 ${filePath}: ${exists ? '✅ 存在' : '❌ 不存在'}`);
-        } catch (checkError) {
-          console.log(`📁 ${filePath}: ❓ 检查失败 - ${checkError.message}`);
-        }
-      });
-    }
-    
-    console.log(`=== 依赖诊断信息结束 ===\n`);
   }
 
   /**
