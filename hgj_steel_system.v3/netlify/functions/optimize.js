@@ -1,8 +1,8 @@
 /**
  * Netlify Function - 钢材优化算法 (异步模式)
  */
-const path = require('path');
 const TaskManager = require('./utils/TaskManager');
+const fetch = require('node-fetch'); // 引入node-fetch
 
 // 创建任务管理器实例
 const taskManager = new TaskManager();
@@ -25,14 +25,7 @@ exports.handler = async (event, context) => {
     if (event.httpMethod !== 'POST') {
       return {
         statusCode: 405,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
-        },
-        body: JSON.stringify({
-          success: false,
-          error: '仅支持POST请求'
-        })
+        body: JSON.stringify({ success: false, error: '仅支持POST请求' })
       };
     }
 
@@ -44,14 +37,19 @@ exports.handler = async (event, context) => {
     // 步骤1：在数据库中创建异步任务，状态为'pending'
     const taskId = await taskManager.createPendingTask(requestData);
     
-    // 步骤2：异步调用后台函数来执行耗时任务
-    // 注意：这里没有 'await'，主函数会立即返回
-    context.callbackWaitsForEmptyEventLoop = false;
-    context.clientContext.functions.invoke('optimization-worker-background', {
-      body: JSON.stringify({ taskId, optimizationData: requestData })
-    });
+    // 步骤2：通过标准HTTP请求异步调用后台工作函数
+    const invokeUrl = `${context.site.url}/.netlify/functions/optimization-worker-background`;
+    console.log(`[${taskId}] 正在调用后台工作者: ${invokeUrl}`);
     
-    console.log(`[${taskId}] 已成功调用后台工作者函数`);
+    // 使用fetch异步调用，不等待结果 (fire and forget)
+    fetch(invokeUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId, optimizationData: requestData })
+    }).catch(err => {
+      // 这个错误只在日志中记录，不会影响主函数的返回
+      console.error(`[${taskId}] 调用后台工作者失败:`, err);
+    });
 
     // 步骤3：立即返回taskId，让前端可以开始轮询
     return {
