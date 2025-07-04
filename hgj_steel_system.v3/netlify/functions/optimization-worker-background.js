@@ -23,9 +23,9 @@ exports.handler = async (event, context) => {
       message: '优化算法已启动...'
     });
 
-    // 步骤 2: 获取优化服务
+    // 步骤 2: 正确地实例化优化服务
     const service = new OptimizationService();
-    console.log(`[${taskId}] OptimizationService 获取成功`);
+    console.log(`[${taskId}] OptimizationService 实例化成功`);
 
     // 步骤 3: 定义进度回调
     const progressCallback = async (progress, message) => {
