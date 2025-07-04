@@ -499,6 +499,54 @@ class OptimizationService {
       activeOptimizers: result
     };
   }
+
+  /**
+   * 异步执行方法 - 专为后台工作函数设计
+   * 支持进度回调的优化执行接口
+   * @param {Object} optimizationData - 优化数据
+   * @param {Function} progressCallback - 进度回调函数 (progress, message) => void
+   * @returns {Promise<Object>} 优化结果
+   */
+  async run(optimizationData, progressCallback) {
+    try {
+      // 初始进度
+      if (progressCallback) {
+        await progressCallback(10, '开始数据验证...');
+      }
+
+      // 调用核心优化方法
+      const result = await this.optimizeSteel(optimizationData);
+
+      // 根据结果更新进度
+      if (result.success) {
+        if (progressCallback) {
+          await progressCallback(90, '优化计算完成，生成结果...');
+        }
+        
+        // 最终进度
+        if (progressCallback) {
+          await progressCallback(100, '优化任务完成');
+        }
+        
+        return result;
+      } else {
+        // 优化失败
+        if (progressCallback) {
+          await progressCallback(100, `优化失败: ${result.error}`);
+        }
+        
+        return result;
+      }
+
+    } catch (error) {
+      // 异常处理
+      if (progressCallback) {
+        await progressCallback(100, `执行异常: ${error.message}`);
+      }
+      
+      throw error;
+    }
+  }
 }
 
 module.exports = OptimizationService; 
