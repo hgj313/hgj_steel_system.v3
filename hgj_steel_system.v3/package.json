@@ -9,7 +9,13 @@
     "install-all": "npm install && cd client && npm install",
     "build:netlify": "cd client && npm install && npm run build",
     "dev": "npm run start",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "performance-check": "node scripts/netlify-performance-check.js",
+    "deploy-check": "npm run build:netlify && echo 'Build completed successfully!'",
+    "prepare-deployment": "node scripts/prepare-deployment.js",
+    "quick-check": "node scripts/quick-check.js",
+    "clean": "node -e \"const fs = require('fs'); const path = require('path'); function rmdir(dir) { try { if (fs.existsSync(dir)) { fs.rmSync(dir, { recursive: true, force: true }); console.log('Cleaned:', dir); } } catch (e) { console.log('Skip:', dir, e.message); } } rmdir('client/build'); rmdir('client/node_modules/.cache');\"",
+    "analyze": "cd client && npm run analyze"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.1",

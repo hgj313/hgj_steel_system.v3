@@ -129,16 +129,40 @@
   NODE_ENV = "production"
   REACT_APP_API_URL = "/.netlify/functions"
   REACT_APP_VERSION = "3.0.0"
+  REACT_APP_NAME = "钢材采购优化系统V3.0"
+  REACT_APP_DEBUG = "false"
+  REACT_APP_PERFORMANCE_MONITORING = "true"
+  REACT_APP_MAX_FILE_SIZE = "10"
+  REACT_APP_MAX_DESIGN_STEELS = "1000"
+  REACT_APP_MAX_MODULE_STEELS = "100"
+  REACT_APP_TASK_TIMEOUT = "300"
+  REACT_APP_DEPLOY_ENV = "production"
 
 [context.deploy-preview.environment]
   NODE_ENV = "development"
   REACT_APP_API_URL = "/.netlify/functions"
   REACT_APP_VERSION = "3.0.0-preview"
+  REACT_APP_NAME = "钢材采购优化系统V3.0(预览)"
+  REACT_APP_DEBUG = "true"
+  REACT_APP_PERFORMANCE_MONITORING = "false"
+  REACT_APP_MAX_FILE_SIZE = "10"
+  REACT_APP_MAX_DESIGN_STEELS = "100"
+  REACT_APP_MAX_MODULE_STEELS = "50"
+  REACT_APP_TASK_TIMEOUT = "60"
+  REACT_APP_DEPLOY_ENV = "preview"
 
 [context.branch-deploy.environment]
   NODE_ENV = "development"
   REACT_APP_API_URL = "/.netlify/functions"
   REACT_APP_VERSION = "3.0.0-dev"
+  REACT_APP_NAME = "钢材采购优化系统V3.0(开发)"
+  REACT_APP_DEBUG = "true"
+  REACT_APP_PERFORMANCE_MONITORING = "false"
+  REACT_APP_MAX_FILE_SIZE = "5"
+  REACT_APP_MAX_DESIGN_STEELS = "50"
+  REACT_APP_MAX_MODULE_STEELS = "20"
+  REACT_APP_TASK_TIMEOUT = "30"
+  REACT_APP_DEPLOY_ENV = "development"
 
 # 插件配置
 [[plugins]]
