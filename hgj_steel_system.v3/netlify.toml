@@ -32,6 +32,9 @@
   # 函数目录
   directory = "netlify/functions"
   
+  # 明确包含函数需要依赖的外部目录
+  included_files = ["api/**", "core/**"]
+
   # Node.js版本
   node_bundler = "esbuild"
 
