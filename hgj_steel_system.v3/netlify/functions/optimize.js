@@ -29,31 +29,39 @@ exports.handler = async (event, context) => {
     const siteUrl = `https://${event.headers.host}`;
     const invokeUrl = `${siteUrl}/.netlify/functions/optimization-worker-background`;
     console.log(`[${taskId}] 准备调用后台工作者: ${invokeUrl}`);
+    console.log(`[${taskId}] 请求头信息:`, JSON.stringify(event.headers, null, 2));
     
-    // 异步调用后台函数，并添加完整的响应验证和日志记录
-    fetch(invokeUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ taskId, optimizationData: requestData })
-    })
-    .then(async res => {
-      if (res.ok) {
-        console.log(`[${taskId}] ✅ 成功调用后台工作者，状态码: ${res.status}`);
+    // 同步调用后台函数，确保请求真正发出
+    console.log(`[${taskId}] 📡 开始发送fetch请求...`);
+    
+    try {
+      const fetchResponse = await fetch(invokeUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, optimizationData: requestData })
+      });
+      
+      console.log(`[${taskId}] 📥 收到fetch响应，状态码: ${fetchResponse.status}`);
+      
+      if (fetchResponse.ok) {
+        const responseBody = await fetchResponse.text();
+        console.log(`[${taskId}] ✅ 成功调用后台工作者，响应内容: ${responseBody}`);
       } else {
-        const errorBody = await res.text();
-        console.error(`[${taskId}] ❌ 调用后台工作者失败，状态码: ${res.status}`);
+        const errorBody = await fetchResponse.text();
+        console.error(`[${taskId}] ❌ 调用后台工作者失败，状态码: ${fetchResponse.status}`);
         console.error(`[${taskId}] 错误详情: ${errorBody}`);
         // 标记任务为失败
-        await taskManager.setTaskError(taskId, `后台工作者启动失败: ${res.status} - ${errorBody}`);
+        await taskManager.setTaskError(taskId, `后台工作者启动失败: ${fetchResponse.status} - ${errorBody}`);
       }
-    })
-    .catch(async err => {
-      console.error(`[${taskId}] ❌ 调用后台工作者时发生网络错误:`, err);
+    } catch (err) {
+      console.error(`[${taskId}] ❌ 调用后台工作者时发生网络错误:`, err.message, err.stack);
       // 标记任务为失败
       await taskManager.setTaskError(taskId, `后台工作者启动网络错误: ${err.message}`);
-    });
+    }
+    
+    console.log(`[${taskId}] 📤 fetch请求处理完成`);
 
-    // 立即返回202 Accepted，表示请求已接受
+    // 返回202 Accepted，表示请求已接受
     return {
       statusCode: 202,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
