@@ -45,8 +45,16 @@ module.exports = {
         
         // 移除console.log
         webpackConfig.optimization.minimizer.forEach(plugin => {
+          // 安全地修改TerserPlugin的配置
           if (plugin.constructor.name === 'TerserPlugin') {
-            plugin.options.terserOptions.compress.drop_console = true;
+            if (!plugin.options.terserOptions) {
+              plugin.options.terserOptions = {};
+            }
+            // 保留现有的compress选项，并添加或覆盖drop_console
+            plugin.options.terserOptions.compress = {
+              ...(plugin.options.terserOptions.compress || {}),
+              drop_console: true,
+            };
           }
         });
       }
