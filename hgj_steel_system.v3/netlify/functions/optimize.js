@@ -38,7 +38,9 @@ exports.handler = async (event, context) => {
     const taskId = await taskManager.createPendingTask(requestData);
     
     // 步骤2：通过标准HTTP请求异步调用后台工作函数
-    const invokeUrl = `${context.site.url}/.netlify/functions/optimization-worker-background`;
+    // 从请求头中动态、可靠地构建URL，不再依赖特殊context
+    const siteUrl = `https://${event.headers.host}`;
+    const invokeUrl = `${siteUrl}/.netlify/functions/optimization-worker-background`;
     console.log(`[${taskId}] 正在调用后台工作者: ${invokeUrl}`);
     
     // 使用fetch异步调用，不等待结果 (fire and forget)
