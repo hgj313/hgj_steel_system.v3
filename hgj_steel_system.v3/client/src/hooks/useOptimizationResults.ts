@@ -664,7 +664,8 @@ export const useAsyncOptimization = () => {
     };
   }, [stopPolling]);
 
-  return {
+  // 确保返回的对象引用是稳定的，只有在内部状态变化时才创建新对象
+  return useMemo(() => ({
     // 任务状态
     currentTask,
     isPolling,
@@ -687,5 +688,5 @@ export const useAsyncOptimization = () => {
     isActive: ['pending', 'running'].includes(currentTask.status),
     hasResults: currentTask.status === 'completed' && !!currentTask.results,
     hasError: currentTask.status === 'failed' && !!currentTask.error
-  };
+  }), [currentTask, isPolling, submitOptimization, cancelTask, resetTask, getTaskHistory]);
 }; 
