@@ -191,6 +191,8 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
       console.log('💾 设置currentOptimization:', completedOptimization);
       
       setCurrentOptimization(completedOptimization);
+      // 关键修复：将完整的、最新的结果也存入localStorage，确保刷新后数据一致
+      saveToStorage(STORAGE_KEYS.CURRENT_OPTIMIZATION, completedOptimization);
 
       const historyRecord: OptimizationResult = {
         id: completedOptimization.id,

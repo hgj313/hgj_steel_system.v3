@@ -87,27 +87,30 @@ const OptimizationPage: React.FC = () => {
     removeModuleSteel,
     setConstraints,
     startOptimization,
-    clearOptimizationData
+    clearOptimizationData,
+    currentOptimization
   } = useOptimizationContext();
   
   const navigate = useNavigate();
+  const [lastNavigatedTaskId, setLastNavigatedTaskId] = useState<string | null>(null);
   
   // 监听优化任务状态，完成后自动跳转
+  // 关键修复：依赖项从 taskStatus 改为 currentOptimization，确保数据准备好后再跳转
   useEffect(() => {
-    if (taskStatus === 'completed') {
+    // 只有当存在一个已完成的优化任务，并且我们尚未为该任务导航过时，才执行跳转
+    if (currentOptimization && currentOptimization.status === 'completed' && currentOptimization.id !== lastNavigatedTaskId) {
       message.success('优化完成！正在跳转到结果页面...', 1.5);
-      // 关键修复：不在跳转前重置任务状态。
-      // 状态的重置应该由用户发起新的操作或离开结果页面时触发。
-      // resetTask(); // <--- 问题根源，移除此行
-
+      
+      // 记录我们已经为这个任务ID导航过，防止重复跳转
+      setLastNavigatedTaskId(currentOptimization.id);
+      
       const timer = setTimeout(() => {
         navigate('/results');
-      }, 1000); // 保留一个短暂延时，让用户看到成功提示
+      }, 1000); // 保留短暂延时以显示消息，现在它不再是解决竞态条件的关键
 
-      // 组件卸载时清除计时器，防止内存泄漏
       return () => clearTimeout(timer);
     }
-  }, [taskStatus, navigate]);
+  }, [currentOptimization, navigate, lastNavigatedTaskId]);
   
   // 本地UI状态
   const [designCollapsed, setDesignCollapsed] = useState(false);
