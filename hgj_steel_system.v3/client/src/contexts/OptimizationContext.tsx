@@ -154,6 +154,13 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
   useEffect(() => {
     const { currentTask } = asyncOptimization;
     
+    console.log('🔄 异步任务状态变化:', {
+      taskId: currentTask.taskId,
+      status: currentTask.status,
+      progress: currentTask.progress,
+      hasResults: !!currentTask.results
+    });
+    
     // 同步优化状态
     setIsOptimizing(asyncOptimization.isActive);
     setProgress(currentTask.progress);
@@ -168,6 +175,7 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
     // 当任务完成时，处理结果
     if (currentTask.status === 'completed' && currentTask.results) {
       console.log('✅ 异步优化任务完成，处理结果');
+      console.log('📊 结果数据:', currentTask.results);
       
       const completedOptimization: OptimizationResult = {
         id: currentTask.taskId || `opt_${Date.now()}`,
@@ -180,6 +188,8 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
         status: 'completed' as OptimizationStatus,
         progress: 100,
       };
+      
+      console.log('💾 设置currentOptimization:', completedOptimization);
       
       // 将完整的当前结果保存在内存中，供结果页立即使用
       setCurrentOptimization(completedOptimization);
@@ -195,12 +205,25 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
         }
       };
       
-      // 只保留最近10条历史，防止localStorage爆满
-      const newHistory = [historyRecord, ...optimizationHistory].slice(0, 10);
-      setOptimizationHistory(newHistory);
-      saveToStorage(STORAGE_KEYS.OPTIMIZATION_HISTORY, newHistory);
+      // 创建新的历史记录，避免依赖当前的optimizationHistory状态
+      setOptimizationHistory(prev => {
+        const newHistory = [historyRecord, ...prev].slice(0, 10);
+        saveToStorage(STORAGE_KEYS.OPTIMIZATION_HISTORY, newHistory);
+        return newHistory;
+      });
     }
-  }, [asyncOptimization, asyncOptimization.currentTask, asyncOptimization.isActive, designSteels, moduleSteels, constraints, optimizationHistory, saveToStorage]);
+  }, [
+    // 移除可能导致循环的依赖
+    asyncOptimization.currentTask.taskId,
+    asyncOptimization.currentTask.status,
+    asyncOptimization.currentTask.progress,
+    asyncOptimization.currentTask.results,
+    asyncOptimization.isActive,
+    designSteels, 
+    moduleSteels, 
+    constraints, 
+    saveToStorage
+  ]);
 
   // 从localStorage加载数据（增强版，带异常捕获）
   useEffect(() => {
@@ -224,12 +247,20 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
         setConstraintsState(parsedConstraints);
         console.log('加载约束条件:', parsedConstraints);
       }
-      const savedCurrentOptimization = localStorage.getItem(STORAGE_KEYS.CURRENT_OPTIMIZATION);
-      if (savedCurrentOptimization) {
-        const parsedOptimization = JSON.parse(savedCurrentOptimization);
-        setCurrentOptimization(parsedOptimization);
-        console.log('加载当前优化结果:', parsedOptimization.id, parsedOptimization.status);
+      
+      // 只在没有活跃的异步任务时才从localStorage加载currentOptimization
+      // 避免覆盖刚刚完成的任务结果
+      if (!asyncOptimization.isActive && asyncOptimization.currentTask.status === 'idle') {
+        const savedCurrentOptimization = localStorage.getItem(STORAGE_KEYS.CURRENT_OPTIMIZATION);
+        if (savedCurrentOptimization) {
+          const parsedOptimization = JSON.parse(savedCurrentOptimization);
+          setCurrentOptimization(parsedOptimization);
+          console.log('加载当前优化结果:', parsedOptimization.id, parsedOptimization.status);
+        }
+      } else {
+        console.log('🚫 跳过加载localStorage中的currentOptimization，因为有活跃的异步任务');
       }
+      
       let parsedHistory: OptimizationResult[] = [];
       try {
         const savedHistory = localStorage.getItem(STORAGE_KEYS.OPTIMIZATION_HISTORY);
@@ -250,7 +281,7 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
       console.error('加载数据失败:', error);
       setIsDataLoaded(true);
     }
-  }, []);
+  }, []); // 只在组件初始化时执行一次
 
   // 强制重新加载数据
   const forceReloadData = useCallback(() => {
@@ -279,11 +310,16 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
         console.log('重新加载约束条件:', parsedConstraints);
       }
 
-      const savedCurrentOptimization = localStorage.getItem(STORAGE_KEYS.CURRENT_OPTIMIZATION);
-      if (savedCurrentOptimization) {
-        const parsedOptimization = JSON.parse(savedCurrentOptimization);
-        setCurrentOptimization(parsedOptimization);
-        console.log('重新加载当前优化结果:', parsedOptimization.id, parsedOptimization.status);
+      // 只在没有活跃的异步任务时才重新加载currentOptimization
+      if (!asyncOptimization.isActive && asyncOptimization.currentTask.status === 'idle') {
+        const savedCurrentOptimization = localStorage.getItem(STORAGE_KEYS.CURRENT_OPTIMIZATION);
+        if (savedCurrentOptimization) {
+          const parsedOptimization = JSON.parse(savedCurrentOptimization);
+          setCurrentOptimization(parsedOptimization);
+          console.log('重新加载当前优化结果:', parsedOptimization.id, parsedOptimization.status);
+        }
+      } else {
+        console.log('🚫 跳过重新加载currentOptimization，因为有活跃的异步任务');
       }
 
       const savedHistory = localStorage.getItem(STORAGE_KEYS.OPTIMIZATION_HISTORY);
@@ -299,7 +335,7 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
       console.error('重新加载数据失败:', error);
       setIsDataLoaded(true);
     }
-  }, []);
+  }, [asyncOptimization.isActive, asyncOptimization.currentTask.status]);
 
   // 调试Context状态
   const debugContext = useCallback(() => {
