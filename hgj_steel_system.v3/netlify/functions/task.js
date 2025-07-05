@@ -31,10 +31,22 @@ exports.handler = async (event, context) => {
       return { statusCode: 404, body: JSON.stringify({ success: false, error: '任务不存在' }) };
     }
     
+    // 关键修复：返回一个扁平化的对象，而不是嵌套的task对象，以匹配前端的期望
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ success: true, task })
+      body: JSON.stringify({
+        success: true,
+        id: task.id,
+        status: task.status,
+        progress: task.progress,
+        message: task.message,
+        results: task.results,
+        error: task.error,
+        executionTime: task.executionTime,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt
+      })
     };
 
   } catch (error) {
