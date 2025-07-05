@@ -389,6 +389,11 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
 
     try {
+      // 关键修复：在提交新任务之前，立即清除上一次的优化结果。
+      // 这是整个流程的起点，确保状态纯净。
+      setCurrentOptimization(null);
+      saveToStorage(STORAGE_KEYS.CURRENT_OPTIMIZATION, null);
+      
       console.log('🚀 启动异步优化任务');
       setError(null);
       
@@ -417,7 +422,7 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
       const errorMessage = err.message || '启动优化过程中发生错误';
       setError(errorMessage);
     }
-  }, [designSteels, moduleSteels, constraints, asyncOptimization]);
+  }, [designSteels, moduleSteels, constraints, asyncOptimization, saveToStorage]);
 
   const cancelOptimization = useCallback(async () => {
     console.log('🛑 取消优化任务');
