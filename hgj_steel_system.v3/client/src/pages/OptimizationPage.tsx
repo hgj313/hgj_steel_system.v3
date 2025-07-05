@@ -95,16 +95,19 @@ const OptimizationPage: React.FC = () => {
   // 监听优化任务状态，完成后自动跳转
   useEffect(() => {
     if (taskStatus === 'completed') {
-      message.success('优化完成！正在跳转到结果页面...');
-      
-      // 在延迟跳转期间，重置任务状态，防止返回此页面时再次触发
-      resetTask();
+      message.success('优化完成！正在跳转到结果页面...', 1.5);
+      // 关键修复：不在跳转前重置任务状态。
+      // 状态的重置应该由用户发起新的操作或离开结果页面时触发。
+      // resetTask(); // <--- 问题根源，移除此行
 
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         navigate('/results');
-      }, 1000);
+      }, 1000); // 保留一个短暂延时，让用户看到成功提示
+
+      // 组件卸载时清除计时器，防止内存泄漏
+      return () => clearTimeout(timer);
     }
-  }, [taskStatus, navigate, resetTask]);
+  }, [taskStatus, navigate]);
   
   // 本地UI状态
   const [designCollapsed, setDesignCollapsed] = useState(false);
