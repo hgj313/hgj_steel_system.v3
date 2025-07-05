@@ -82,22 +82,26 @@ class OptimizationService {
         this.activeOptimizers.delete(optimizationId);
       }, 300000);
 
-      // 10. 构建最终响应 - API层只负责格式转换
-      const response = {
-        success: optimizationOutput.success,
-        optimizationId: optimizationId,
-        result: optimizationOutput.success ? optimizationOutput.result : null,
-        error: optimizationOutput.success ? null : optimizationOutput.error,
-        stats: optimizationOutput.stats,
-        executionTime: Date.now() - optimizerInfo.startTime,
-        processingStatus: optimizationOutput.result?.processingStatus || {
-          isCompleted: true,
-          readyForRendering: true,
-          completedAt: new Date().toISOString()
-        }
-      };
-
-      return response;
+      // 10. 构建最终响应 - 确保与前端数据契约一致
+      if (optimizationOutput.success) {
+        // 成功时，直接返回包含solutions和completeStats的result对象
+        return {
+          success: true,
+          optimizationId: optimizationId,
+          // 直接将优化器产出的result作为顶层结果
+          ...optimizationOutput.result, 
+          // 将executionTime也合并到结果中
+          executionTime: Date.now() - optimizerInfo.startTime,
+        };
+      } else {
+        // 失败时，返回统一的错误结构
+        return {
+          success: false,
+          optimizationId: optimizationId,
+          error: optimizationOutput.error,
+          executionTime: Date.now() - optimizerInfo.startTime,
+        };
+      }
 
     } catch (error) {
       // 🔧 使用ErrorHandler处理异常
