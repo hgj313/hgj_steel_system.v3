@@ -78,8 +78,6 @@ const OptimizationPage: React.FC = () => {
     isOptimizing,
     progress,
     error,
-    taskStatus,
-    resetTask,
     setDesignSteels,
     removeDesignSteel,
     addModuleSteel,
