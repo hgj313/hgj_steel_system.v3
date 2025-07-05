@@ -501,49 +501,30 @@ class OptimizationService {
   }
 
   /**
-   * 异步执行方法 - 专为后台工作函数设计
-   * 支持进度回调的优化执行接口
-   * @param {Object} optimizationData - 优化数据
-   * @param {Function} progressCallback - 进度回调函数 (progress, message) => void
-   * @returns {Promise<Object>} 优化结果
+   * 运行优化过程，支持进度回调。
+   * 这是为了适应异步后台任务而设计的包装器方法。
+   * @param {object} optimizationData - 包含设计钢材、模数钢材和约束的数据。
+   * @param {function} progressCallback - 用于报告进度的回调函数。
+   * @returns {Promise<object>} - 返回完整的优化结果。
    */
   async run(optimizationData, progressCallback) {
     try {
-      // 初始进度
-      if (progressCallback) {
-        await progressCallback(10, '开始数据验证...');
-      }
-
-      // 调用核心优化方法
-      const result = await this.optimizeSteel(optimizationData);
-
-      // 根据结果更新进度
-      if (result.success) {
-        if (progressCallback) {
-          await progressCallback(90, '优化计算完成，生成结果...');
-        }
-        
-        // 最终进度
-        if (progressCallback) {
-          await progressCallback(100, '优化任务完成');
-        }
-        
-        return result;
-      } else {
-        // 优化失败
-        if (progressCallback) {
-          await progressCallback(100, `优化失败: ${result.error}`);
-        }
-        
-        return result;
-      }
+      console.log('✅ service.run() 已被调用，优化正式开始');
+      await progressCallback(15, '参数验证和初始化...');
+      
+      // 调用现有的核心优化方法
+      const results = await this.optimizeSteel(optimizationData);
+      
+      // 注意：这里的进度更新只是为了完成流程，
+      // 因为optimizeSteel是同步的，它完成后，整个任务就完成了。
+      // 如果optimizeSteel内部有更多步骤，可以在其中多次调用progressCallback。
+      
+      console.log('✅ service.run() 即将返回结果');
+      return results;
 
     } catch (error) {
-      // 异常处理
-      if (progressCallback) {
-        await progressCallback(100, `执行异常: ${error.message}`);
-      }
-      
+      console.error('❌ 在 service.run() 内部捕获到错误:', error);
+      // 将错误向上抛出，以便后台工作者可以捕获并记录它
       throw error;
     }
   }
