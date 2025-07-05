@@ -25,13 +25,18 @@ exports.handler = async (event, context) => {
 
     const taskId = await taskManager.createPendingTask(requestData);
     
-    // 从请求头中动态、可靠地构建URL
-    const siteUrl = `https://${event.headers.host}`;
+    // 关键修复：不再依赖不稳定的event.headers.host，
+    // 改用Netlify在构建和运行时提供的、更可靠的process.env.URL
+    const siteUrl = process.env.URL || `https://${event.headers.host}`;
+    if (!process.env.URL) {
+      console.warn(`[${taskId}] 警告：环境变量 process.env.URL 未设置，降级使用 event.headers.host。这在本地开发时正常，但在生产环境可能导致调用失败。`);
+    }
+    
     const invokeUrl = `${siteUrl}/.netlify/functions/optimization-worker-background`;
     console.log(`[${taskId}] 准备调用后台工作者: ${invokeUrl}`);
     console.log(`[${taskId}] 请求头信息:`, JSON.stringify(event.headers, null, 2));
     
-    // 同步调用后台函数，确保请求真正发出
+    // 异步调用后台函数，但不等待其完成，这才是真正的“触发”
     console.log(`[${taskId}] 📡 开始发送fetch请求...`);
     
     try {
