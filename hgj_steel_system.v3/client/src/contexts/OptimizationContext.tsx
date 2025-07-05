@@ -243,8 +243,16 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
         if (savedCurrentOptimization) {
           try {
             const parsedOptimization = JSON.parse(savedCurrentOptimization);
-            setCurrentOptimization(parsedOptimization);
-            console.log('加载当前优化结果:', parsedOptimization.id, parsedOptimization.status);
+
+            // 关键修复：只恢复未完成的任务，防止在新会话开始时直接跳转到旧的结果页
+            if (parsedOptimization && parsedOptimization.status !== 'completed') {
+              setCurrentOptimization(parsedOptimization);
+              console.log('恢复了未完成的优化任务:', parsedOptimization.id, parsedOptimization.status);
+            } else {
+              console.log('忽略了已完成的旧优化结果，确保应用从主页开始。');
+              // 可选：在这里清除localStorage中的旧结果，以保持清洁
+              // localStorage.removeItem(STORAGE_KEYS.CURRENT_OPTIMIZATION);
+            }
           } catch(e) {
             console.error("解析currentOptimization失败", e)
           }

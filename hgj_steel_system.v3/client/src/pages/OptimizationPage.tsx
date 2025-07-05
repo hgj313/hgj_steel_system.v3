@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Card, 
   Button, 
@@ -86,29 +86,30 @@ const OptimizationPage: React.FC = () => {
     setConstraints,
     startOptimization,
     clearOptimizationData,
-    currentOptimization
+    currentOptimization // 确保我们获取了currentOptimization
   } = useOptimizationContext();
   
   const navigate = useNavigate();
-  const [lastNavigatedTaskId, setLastNavigatedTaskId] = useState<string | null>(null);
+  // 关键修复：使用useRef替代useState，防止不必要的重渲染导致跳转被取消
+  const lastNavigatedTaskId = useRef<string | null>(null);
   
   // 监听优化任务状态，完成后自动跳转
-  // 关键修复：依赖项从 taskStatus 改为 currentOptimization，确保数据准备好后再跳转
   useEffect(() => {
     // 只有当存在一个已完成的优化任务，并且我们尚未为该任务导航过时，才执行跳转
-    if (currentOptimization && currentOptimization.status === 'completed' && currentOptimization.id !== lastNavigatedTaskId) {
+    if (currentOptimization && currentOptimization.status === 'completed' && currentOptimization.id !== lastNavigatedTaskId.current) {
       message.success('优化完成！正在跳转到结果页面...', 1.5);
       
       // 记录我们已经为这个任务ID导航过，防止重复跳转
-      setLastNavigatedTaskId(currentOptimization.id);
+      lastNavigatedTaskId.current = currentOptimization.id;
       
       const timer = setTimeout(() => {
         navigate('/results');
-      }, 1000); // 保留短暂延时以显示消息，现在它不再是解决竞态条件的关键
+      }, 1000);
 
+      // 清理函数保持不变，以防组件在计时器完成前被卸载
       return () => clearTimeout(timer);
     }
-  }, [currentOptimization, navigate, lastNavigatedTaskId]);
+  }, [currentOptimization, navigate]); // 依赖项中不再需要lastNavigatedTaskId，因为useRef的更新不会触发重渲染
   
   // 本地UI状态
   const [designCollapsed, setDesignCollapsed] = useState(false);
