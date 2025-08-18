@@ -86,7 +86,8 @@ const OptimizationPage: React.FC = () => {
     setConstraints,
     startOptimization,
     clearOptimizationData,
-    currentOptimization // 确保我们获取了currentOptimization
+    currentTaskId,
+    taskStatus
   } = useOptimizationContext();
   
   const navigate = useNavigate();
@@ -115,16 +116,16 @@ const OptimizationPage: React.FC = () => {
   
   // 监听优化任务状态，完成后自动跳转
   useEffect(() => {
-    // 只有当存在一个已完成的优化任务，并且我们尚未为该任务导航过时，才执行跳转
+    // 只有当异步任务完成，并且我们尚未为该任务导航过时，才执行跳转
     const navigatedTaskIds = getNavigatedTaskIds();
-    if (currentOptimization && 
-        currentOptimization.status === 'completed' && 
-        !navigatedTaskIds.includes(currentOptimization.id)) {
+    if (currentTaskId && 
+        taskStatus === 'completed' && 
+        !navigatedTaskIds.includes(currentTaskId)) {
       
       message.success('优化完成！正在跳转到结果页面...', 1.5);
       
       // 记录我们已经为这个任务ID导航过，防止重复跳转
-      addNavigatedTaskId(currentOptimization.id);
+      addNavigatedTaskId(currentTaskId);
       
       const timer = setTimeout(() => {
         navigate('/results');
@@ -133,7 +134,7 @@ const OptimizationPage: React.FC = () => {
       // 清理函数保持不变，以防组件在计时器完成前被卸载
       return () => clearTimeout(timer);
     }
-  }, [currentOptimization, navigate]);
+  }, [taskStatus, currentTaskId, navigate]);
   
   // 本地UI状态
   const [designCollapsed, setDesignCollapsed] = useState(false);
@@ -1109,6 +1110,201 @@ const OptimizationPage: React.FC = () => {
       </motion.div>
     </PageContainer>
   );
+};
+
+export default OptimizationPage;
+// 监听优化任务状态，完成后自动跳转
+  useEffect(() => {
+    // 只有当存在一个已完成的异步任务，并且我们尚未为该任务导航过时，才执行跳转
+    const navigatedTaskIds = getNavigatedTaskIds();
+    
+    // 使用异步任务状态来判断，而不是currentOptimization.status
+    const taskId = currentTaskId;
+    if (taskId && 
+        taskStatus === 'completed' && 
+        !navigatedTaskIds.includes(taskId)) {
+      
+      message.success('优化完成！正在跳转到结果页面...', 1.5);
+      
+      // 记录我们已经为这个任务ID导航过，防止重复跳转
+      addNavigatedTaskId(taskId);
+      
+      const timer = setTimeout(() => {
+        navigate('/results');
+      }, 1000);
+
+      // 清理函数保持不变，以防组件在计时器完成前被卸载
+      return () => clearTimeout(timer);
+    }
+  }, [taskStatus, currentTaskId, navigate]);
+  
+  {error && (
+    <Alert
+      message="优化错误"
+      description={error}
+      type="error"
+      showIcon
+      style={{ marginTop: 16, textAlign: 'left' }}
+    />
+  )}
+</div>
+{/* 设计钢材添加/编辑模态框 */}
+<Modal
+    title={editingDesignSteel ? "编辑设计钢材" : "添加设计钢材"}
+    open={showDesignModal}
+    onCancel={() => {
+      setShowDesignModal(false);
+      setEditingDesignSteel(null);
+      form.resetFields();
+    }}
+    footer={null}
+  width={600}
+>
+    <Form
+      form={form}
+      layout="vertical"
+      onFinish={handleSaveDesignSteel}
+    >
+      <Row gutter={16}>
+        <Col span={12}>
+          <Form.Item
+            label="长度 (mm)"
+            name="length"
+            rules={[
+              { required: true, message: '请输入钢材长度' },
+              { type: 'number', min: 1, max: 50000, message: '长度必须在1-50000mm之间' }
+            ]}
+          >
+            <InputNumber style={{ width: '100%' }} placeholder="如: 3000" />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item
+            label="数量"
+            name="quantity"
+            rules={[
+              { required: true, message: '请输入数量' },
+              { type: 'number', min: 1, max: 10000, message: '数量必须在1-10000之间' }
+            ]}
+          >
+            <InputNumber style={{ width: '100%' }} placeholder="如: 10" />
+          </Form.Item>
+        </Col>
+      </Row>
+      
+      <Row gutter={16}>
+        <Col span={12}>
+          <Form.Item
+            label="截面面积 (mm²)"
+            name="crossSection"
+            rules={[
+              { required: true, message: '请输入截面面积' },
+              { type: 'number', min: 1, max: 100000, message: '截面面积必须在1-100000mm²之间' }
+            ]}
+          >
+            <InputNumber style={{ width: '100%' }} placeholder="如: 2000" />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item
+            label="构件编号"
+            name="componentNumber"
+          >
+            <Input placeholder="如: GJ-001" />
+          </Form.Item>
+        </Col>
+      </Row>
+      
+      <Row gutter={16}>
+        <Col span={12}>
+          <Form.Item
+            label="规格"
+            name="specification"
+          >
+            <Input placeholder="如: HRB400" />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item
+            label="零件号"
+            name="partNumber"
+          >
+            <Input placeholder="如: P-001" />
+          </Form.Item>
+        </Col>
+      </Row>
+
+      <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
+        <Space>
+          <Button onClick={() => {
+            setShowDesignModal(false);
+            setEditingDesignSteel(null);
+            form.resetFields();
+          }}>
+            取消
+          </Button>
+          <Button type="primary" htmlType="submit">
+            {editingDesignSteel ? '更新' : '添加'}
+          </Button>
+        </Space>
+      </Form.Item>
+    </Form>
+  </Modal>
+
+  {/* 模数钢材添加/编辑模态框 */}
+  <Modal
+    title={editingModuleSteel ? "编辑模数钢材" : "添加模数钢材"}
+    open={showModuleModal}
+    onCancel={() => {
+      setShowModuleModal(false);
+      setEditingModuleSteel(null);
+      moduleForm.resetFields();
+    }}
+    footer={null}
+  >
+    <Form
+      form={moduleForm}
+      layout="vertical"
+      onFinish={handleSaveModuleSteel}
+    >
+      <Form.Item
+        label="名称"
+        name="name"
+        rules={[{ required: true, message: '请输入模数钢材名称' }]}
+      >
+        <Input placeholder="如: 12米标准钢材" />
+    </Form.Item>
+    
+      <Form.Item
+        label="长度 (mm)"
+        name="length"
+        rules={[
+          { required: true, message: '请输入长度' },
+          { type: 'number', min: 1000, max: 50000, message: '长度必须在1000-50000mm之间' }
+        ]}
+      >
+        <InputNumber style={{ width: '100%' }} placeholder="如: 12000" />
+    </Form.Item>
+    
+      <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
+        <Space>
+          <Button onClick={() => {
+            setShowModuleModal(false);
+            setEditingModuleSteel(null);
+            moduleForm.resetFields();
+          }}>
+            取消
+          </Button>
+          <Button type="primary" htmlType="submit">
+            {editingModuleSteel ? '更新' : '添加'}
+          </Button>
+        </Space>
+    </Form.Item>
+  </Form>
+  </Modal>
+  </motion.div>
+</PageContainer>
+);
 };
 
 export default OptimizationPage;
