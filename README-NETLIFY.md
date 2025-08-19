@@ -10,7 +10,7 @@ node deploy-netlify.js
 ### 2. Netlify部署 (推荐)
 
 **方式一：网站部署**
-1. 访问 [Netlify](https://www.netlify.com) 并登录
+1. 访问 [Netlify](https://www.netlify.com) 
 2. 点击 "New site from Git"
 3. 选择此仓库
 4. 配置构建设置：
