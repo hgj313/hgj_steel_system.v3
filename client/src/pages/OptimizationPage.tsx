@@ -96,21 +96,32 @@ const OptimizationPage: React.FC = () => {
   const getNavigatedTaskIds = () => {
     try {
       const saved = sessionStorage.getItem('navigatedTaskIds');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+      return [];
+    } catch (error) {
+      console.warn('读取已跳转任务ID失败:', error);
       return [];
     }
   };
 
   const addNavigatedTaskId = (taskId: string) => {
     try {
+      if (!taskId || typeof taskId !== 'string') {
+        console.warn('无效的任务ID:', taskId);
+        return;
+      }
+      
       const navigatedIds = getNavigatedTaskIds();
       if (!navigatedIds.includes(taskId)) {
         navigatedIds.push(taskId);
         sessionStorage.setItem('navigatedTaskIds', JSON.stringify(navigatedIds));
+        console.log('已记录任务跳转:', taskId);
       }
-    } catch {
-      // 忽略存储错误
+    } catch (error) {
+      console.error('记录任务跳转失败:', error);
     }
   };
   
@@ -118,14 +129,29 @@ const OptimizationPage: React.FC = () => {
   useEffect(() => {
     // 只有当异步任务完成，并且我们尚未为该任务导航过时，才执行跳转
     const navigatedTaskIds = getNavigatedTaskIds();
-    if (currentTaskId && 
-        taskStatus === 'completed' && 
-        !navigatedTaskIds.includes(currentTaskId)) {
+    
+    // 🔒 防重复跳转：确保任务ID和状态都有效且匹配
+    if (!currentTaskId || taskStatus !== 'completed') {
+      return;
+    }
+    
+    // 🔒 防重复跳转：检查是否已导航过此任务
+    if (navigatedTaskIds.includes(currentTaskId)) {
+      return;
+    }
+    
+    // 🔒 防竞态条件：原子性检查和标记
+    try {
+      // 再次检查，防止竞态条件
+      const currentIds = getNavigatedTaskIds();
+      if (currentIds.includes(currentTaskId)) {
+        return;
+      }
+      
+      // 立即标记为已导航，防止重复
+      addNavigatedTaskId(currentTaskId);
       
       message.success('优化完成！正在跳转到结果页面...', 1.5);
-      
-      // 记录我们已经为这个任务ID导航过，防止重复跳转
-      addNavigatedTaskId(currentTaskId);
       
       const timer = setTimeout(() => {
         navigate('/results');
@@ -133,6 +159,8 @@ const OptimizationPage: React.FC = () => {
 
       // 清理函数保持不变，以防组件在计时器完成前被卸载
       return () => clearTimeout(timer);
+    } catch (error) {
+      console.error('自动跳转失败:', error);
     }
   }, [taskStatus, currentTaskId, navigate, addNavigatedTaskId]);
   
@@ -466,11 +494,12 @@ const OptimizationPage: React.FC = () => {
     try {
       console.log('=== 开始优化执行 ===');
       
-      // 清理已跳转的任务ID，允许新的优化任务可以跳转
+      // 🔒 清理已跳转的任务ID，允许新的优化任务可以跳转
       try {
         sessionStorage.removeItem('navigatedTaskIds');
-      } catch {
-        // 忽略清理错误
+        console.log('✅ 已清理已跳转任务ID记录');
+      } catch (error) {
+        console.warn('清理已跳转任务ID失败:', error);
       }
       
       await startOptimization();
