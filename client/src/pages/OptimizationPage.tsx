@@ -134,7 +134,7 @@ const OptimizationPage: React.FC = () => {
       // 清理函数保持不变，以防组件在计时器完成前被卸载
       return () => clearTimeout(timer);
     }
-  }, [taskStatus, currentTaskId, navigate]);
+  }, [taskStatus, currentTaskId, navigate, addNavigatedTaskId]);
   
   // 本地UI状态
   const [designCollapsed, setDesignCollapsed] = useState(false);
