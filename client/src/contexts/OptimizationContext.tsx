@@ -248,10 +248,15 @@ export const OptimizationProvider: React.FC<{ children: ReactNode }> = ({ childr
             if (parsedOptimization && parsedOptimization.status !== 'completed') {
               setCurrentOptimization(parsedOptimization);
               console.log('恢复了未完成的优化任务:', parsedOptimization.id, parsedOptimization.status);
-            } else {
-              console.log('忽略了已完成的旧优化结果，确保应用从主页开始。');
-              // 可选：在这里清除localStorage中的旧结果，以保持清洁
-              // localStorage.removeItem(STORAGE_KEYS.CURRENT_OPTIMIZATION);
+            } else if (parsedOptimization && parsedOptimization.status === 'completed') {
+              // 对于已完成的任务，创建新的任务对象，但清除可能导致自动跳转的标志
+              const safeOptimization = {
+                ...parsedOptimization,
+                // 确保不会自动跳转到结果页
+                autoRedirectToResults: false
+              };
+              setCurrentOptimization(safeOptimization);
+              console.log('加载了已完成的优化结果，但禁用了自动跳转:', parsedOptimization.id);
             }
           } catch(e) {
             console.error("解析currentOptimization失败", e)
@@ -530,4 +535,4 @@ export const useOptimizationContext = () => {
     throw new Error('useOptimizationContext must be used within an OptimizationProvider');
   }
   return context;
-}; 
+};

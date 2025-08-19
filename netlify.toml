@@ -44,54 +44,66 @@
   from = "/api/health"
   to = "/.netlify/functions/health"
   status = 200
+  force = true
 
 [[redirects]]
   # 系统统计
   from = "/api/stats"
   to = "/.netlify/functions/stats"
   status = 200
+  force = true
 
 [[redirects]]
   # 优化算法
   from = "/api/optimize"
   to = "/.netlify/functions/optimize"
   status = 200
+  force = true
 
 [[redirects]]
   # 文件上传
   from = "/api/upload-design-steels"
   to = "/.netlify/functions/upload-design-steels"
   status = 200
+  force = true
 
 [[redirects]]
   # 约束验证
   from = "/api/validate-constraints"
   to = "/.netlify/functions/validate-constraints"
   status = 200
+  force = true
 
 [[redirects]]
   # 任务管理 - 获取单个任务
   from = "/api/task/:taskId"
   to = "/.netlify/functions/task"
   status = 200
+  force = true
 
 [[redirects]]
   # 任务管理 - 任务列表
   from = "/api/tasks"
   to = "/.netlify/functions/tasks"
   status = 200
+  force = true
 
 [[redirects]]
   # 通用API重定向（备用）
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
+  force = true
 
 [[redirects]]
-  # SPA路由重定向
+  # SPA路由重定向 - 防止重复自动跳转修复
   from = "/*"
   to = "/index.html"
   status = 200
+  # 添加条件，确保只在没有匹配文件时重定向，避免与前端路由冲突
+  conditions = { Query = { path = "!^/api/*" } }
+  # 添加重定向控制，避免不必要的重定向
+  force = false
 
 # 头部配置
 [[headers]]
@@ -181,4 +193,4 @@
 #   package = "netlify-plugin-cypress"
   
 #   [plugins.inputs]
-#     enable = false 
+#     enable = false
