@@ -107,6 +107,19 @@
 
 ### 环境变量配置
 
+### 必需变量
+- `DATABASE_URL`: PostgreSQL数据库连接字符串（示例：`postgresql://user:password@host:5432/dbname`）
+- `DB_PATH`: 数据库文件存储路径（生产环境建议使用绝对路径）
+
+### 配置方式
+1. 登录Netlify控制台
+2. 进入站点设置 > Environment
+3. 添加以下变量：
+
+![环境变量配置示意图](https://example.com/env-var-config.png)
+
+⚠️ 注意：本地开发时请在`.env`文件中配置这些变量
+
 在Netlify Dashboard中设置以下环境变量：
 
 | 变量名 | 值 | 说明 |
@@ -203,4 +216,4 @@
 **版本信息**
 - 系统版本：V3.0.0
 - 部署平台：Netlify
-- 更新时间：2024年 
+- 更新时间：2024年
