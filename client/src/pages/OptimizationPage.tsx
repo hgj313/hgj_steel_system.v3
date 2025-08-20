@@ -107,23 +107,23 @@ const OptimizationPage: React.FC = () => {
     }
   };
 
-  const addNavigatedTaskId = (taskId: string) => {
-    try {
-      if (!taskId || typeof taskId !== 'string') {
-        console.warn('无效的任务ID:', taskId);
-        return;
-      }
-      
-      const navigatedIds = getNavigatedTaskIds();
-      if (!navigatedIds.includes(taskId)) {
-        navigatedIds.push(taskId);
-        sessionStorage.setItem('navigatedTaskIds', JSON.stringify(navigatedIds));
-        console.log('已记录任务跳转:', taskId);
-      }
-    } catch (error) {
-      console.error('记录任务跳转失败:', error);
+  const addNavigatedTaskId = useCallback((taskId: string) => {
+  try {
+    if (!taskId || typeof taskId !== 'string') {
+      console.warn('无效的任务ID:', taskId);
+      return;
     }
-  };
+    
+    const navigatedIds = getNavigatedTaskIds();
+    if (!navigatedIds.includes(taskId)) {
+      navigatedIds.push(taskId);
+      sessionStorage.setItem('navigatedTaskIds', JSON.stringify(navigatedIds));
+      console.log('已记录任务跳转:', taskId);
+    }
+  } catch (error) {
+    console.error('记录任务跳转失败:', error);
+  }
+}, []);
   
   // 监听优化任务状态，完成后自动跳转
   useEffect(() => {
