@@ -110,14 +110,36 @@ class TaskManager {
     return this.initPromise;
   }
 
-  // 保存数据库更改到文件
-  async saveDatabase() {
-    try {
-      await this.db.write();
-    } catch (error) {
-      console.error('❌ 保存数据库失败:', error);
-      throw new Error('保存数据库失败');
+  // 保存数据库更改到文件 - 增强版：增加重试机制和更详细的日志
+  async saveDatabase(maxRetries = 3, retryDelay = 100) {
+    let retries = 0;
+    while (retries < maxRetries) {
+      try {
+        console.log(`💾 开始保存数据库到: ${this.dbPath}`);
+        await this.db.write();
+        
+        // 验证保存是否成功
+        const adapter = new this.db.adapter.constructor(this.dbPath);
+        const tempDb = new Low(adapter, { optimizationTasks: [] });
+        await tempDb.read();
+        
+        console.log(`✅ 数据库保存成功，当前任务总数: ${tempDb.data.optimizationTasks?.length || 0}`);
+        return true;
+      } catch (error) {
+        retries++;
+        console.error(`❌ 保存数据库失败 (尝试 ${retries}/${maxRetries}):`, error.message);
+        
+        if (retries >= maxRetries) {
+          console.error('❌ 数据库保存最终失败，所有重试均失败');
+          throw new Error(`保存数据库失败，已尝试 ${maxRetries} 次: ${error.message}`);
+        }
+        
+        console.log(`🔄 等待 ${retryDelay}ms 后重试...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        retryDelay *= 2; // 指数退避
+      }
     }
+    return false;
   }
 
   generateTaskId() {
@@ -161,20 +183,32 @@ class TaskManager {
 
   async getTask(taskId) {
     try {
+      // 确保数据库已初始化
       await this.initialize();
-      console.log(`🔍 查找任务: ${taskId}`);
       
-      const task = this.db.data.optimizationTasks.find(t => t.id === taskId);
+      // 重新读取数据库以获取最新状态，不依赖内存缓存
+      console.log(`🔍 查找任务: ${taskId} (重新读取数据库)`);
+      
+      // 创建新的数据库实例以确保读取最新数据
+      const adapter = new this.db.adapter.constructor(this.dbPath);
+      const tempDb = new Low(adapter, { optimizationTasks: [] });
+      await tempDb.read();
+      
+      // 确保optimizationTasks数组存在
+      if (!tempDb.data.optimizationTasks) {
+        tempDb.data.optimizationTasks = [];
+      }
+      
+      const task = tempDb.data.optimizationTasks.find(t => t.id === taskId);
       
       if (!task) {
-        console.log(`⚠️ 任务不存在: ${taskId}`);
+        console.log(`⚠️ 任务不存在: ${taskId} (数据库中未找到)`);
         return null;
       }
       
       console.log(`✅ 找到任务: ${taskId}, 状态: ${task.status}`);
       
-      // 由于数据结构已经统一为驼峰命名，直接返回task对象
-      // 不需要再进行字段转换
+      // 返回任务信息
       return {
         id: task.id, 
         type: task.type, 
