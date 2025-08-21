@@ -12,10 +12,6 @@ class DatabaseManager {
   constructor() {
     this.db = null;
     this.dbPath = process.env.DB_PATH || path.join(__dirname, 'steel_system.json');
-if (!process.env.DB_PATH) {
-  console.error('❌ 严重错误：DB_PATH环境变量未配置，请参考部署文档配置数据库存储路径');
-  process.exit(1);
-}
     this.backupDir = path.join(__dirname, 'backups');
   }
 

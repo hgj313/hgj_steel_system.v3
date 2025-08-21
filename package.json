@@ -18,7 +18,6 @@
     "analyze": "cd client && npm run analyze"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.0.1",
     "@netlify/blobs": "^10.0.2",
     "@react-three/drei": "^10.3.0",
     "@react-three/fiber": "^9.1.2",

@@ -23,19 +23,9 @@
 
 ### 2. 数据库准备
 
-- [ ] **Neon PostgreSQL数据库**
-  - [ ] 数据库已创建
-  - [ ] 连接字符串已获取
-  - [ ] 数据库初始化脚本已运行
-  - [ ] 表结构已创建
-  - [ ] 索引已创建
-  - [ ] 权限已设置
-
-- [ ] **数据库连接测试**
-  ```bash
-  # 运行数据库初始化脚本
-  psql your_database_url -f database/init-netlify.sql
-  ```
+- [ ] **lowdb JSON数据库**
+  - [ ] 确保数据库文件目录可写
+  - [ ] 系统会自动创建数据库文件
 
 ### 3. 环境变量配置
 
@@ -43,8 +33,7 @@
   - [ ] `NODE_ENV=production`
   - [ ] `REACT_APP_VERSION=3.0.0`
   - [ ] `REACT_APP_API_URL=/.netlify/functions`
-  - [ ] `DATABASE_URL=your_neon_postgres_connection_string`
-  - [ ] `NETLIFY_DATABASE_URL=your_neon_postgres_connection_string`
+  - [ ] `DB_PATH=path/to/your/database.json` (可选，自定义数据库文件路径)
 
 - [ ] **功能配置变量**
   - [ ] `REACT_APP_MAX_FILE_SIZE=10`
@@ -151,11 +140,11 @@ cp NETLIFY_ENV_VARS.md netlify-env-template.txt
 # 然后在Netlify Dashboard中配置
 ```
 
-### 步骤4：数据库初始化
-```bash
-# 运行数据库初始化脚本
-psql $DATABASE_URL -f database/init-netlify.sql
-```
+### 步骤4：数据库配置
+当前版本使用lowdb JSON数据库，无需额外的数据库初始化步骤。
+- 系统会自动创建和管理JSON数据库文件
+- 数据库文件默认路径：`server/database/steel_system.json`
+- 可通过设置`DB_PATH`环境变量自定义数据库文件路径
 
 ## 📋 部署后验证
 
@@ -186,13 +175,11 @@ npm run performance-check https://your-site.netlify.app
 
 ### API不工作
 - 检查环境变量是否正确设置
-- 确认数据库连接字符串正确
 - 查看Function日志
 
-### 数据库连接失败
-- 验证DATABASE_URL格式正确
-- 确认Neon数据库处于活跃状态
-- 检查网络连接
+### 数据库访问失败
+- 验证DB_PATH指定的路径可写
+- 检查文件权限
 
 ### 性能问题
 - 启用gzip压缩
@@ -223,4 +210,4 @@ npm run performance-check https://your-site.netlify.app
 
 **版本**: V3.0.0  
 **更新时间**: 2024年  
-**适用平台**: Netlify 
+**适用平台**: Netlify

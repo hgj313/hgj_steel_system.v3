@@ -107,9 +107,10 @@
 
 ### 环境变量配置
 
-### 必需变量
-- `DATABASE_URL`: PostgreSQL数据库连接字符串（示例：`postgresql://user:password@host:5432/dbname`）
-- `DB_PATH`: 数据库文件存储路径（生产环境建议使用绝对路径）
+**重要说明：**
+- 当前版本已将所有数据库操作统一到lowdb JSON数据库，不再需要配置PostgreSQL相关的`DATABASE_URL`环境变量。
+- 系统默认使用`server/database/steel_system.json`作为数据库文件路径，您可以通过`DB_PATH`环境变量自定义此路径。
+- 所有环境变量均为可选，系统已提供合理的默认值。
 
 ### 配置方式
 1. 登录Netlify控制台
@@ -127,6 +128,7 @@
 | NODE_ENV | production | 生产环境 |
 | REACT_APP_VERSION | 3.0.0 | 应用版本 |
 | REACT_APP_API_URL | /.netlify/functions | API地址 |
+| DB_PATH | server/database/steel_system.json | JSON数据库文件路径（可选，默认值已提供） |
 
 ## 📱 API端点说明
 

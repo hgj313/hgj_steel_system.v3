@@ -213,7 +213,6 @@ function checkDependencies() {
       const clientPackage = JSON.parse(fs.readFileSync(path.resolve('client/package.json'), 'utf8'));
       
       const criticalDeps = [
-        '@neondatabase/serverless',
         'concurrently',
         'express'
       ];
@@ -395,10 +394,9 @@ function showSummary(report) {
   if (passedChecks === totalChecks) {
     log('\n🎉 恭喜！系统已准备好部署到Netlify', 'green');
     log('接下来请：', 'blue');
-    log('1. 在Neon创建PostgreSQL数据库', 'blue');
-    log('2. 运行数据库初始化脚本', 'blue');
-    log('3. 在Netlify配置环境变量', 'blue');
-    log('4. 部署到Netlify', 'blue');
+    log('1. 在Netlify配置环境变量（参考NETLIFY_ENV_VARS.md）', 'blue');
+    log('2. 部署到Netlify', 'blue');
+    log('注意：系统会自动创建和管理lowdb JSON数据库', 'blue');
   } else {
     log('\n⚠️ 请先修复上述问题再进行部署', 'yellow');
   }
@@ -445,4 +443,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main }; 
+module.exports = { main };

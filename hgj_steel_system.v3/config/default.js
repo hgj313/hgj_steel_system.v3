@@ -101,13 +101,10 @@ module.exports = {
   // 数据库配置（如果需要）
   database: {
     type: process.env.DB_TYPE || 'memory',
-    connection: {
-      host: process.env.DB_HOST || 'localhost',
-      port: process.env.DB_PORT || 5432,
-      database: process.env.DB_NAME || 'hgj_steel_v3',
-      username: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASS || ''
-    },
+    // 当前版本使用lowdb JSON数据库
+    // 数据库文件路径可通过DB_PATH环境变量自定义
+    // 默认路径: database/steel_system.json
+    connection: null,
     pool: {
       min: 2,
       max: 10,
@@ -236,4 +233,4 @@ module.exports = {
       level: 'error'
     }
   }
-}; 
+};

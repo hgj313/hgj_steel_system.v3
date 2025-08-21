@@ -14,8 +14,10 @@ REACT_APP_API_URL=/.netlify/functions
 
 ### 数据库配置
 ```
-DATABASE_URL=your_neon_postgres_connection_string
-NETLIFY_DATABASE_URL=your_neon_postgres_connection_string
+# 当前版本已迁移到lowdb JSON数据库，不再需要PostgreSQL配置
+# 系统默认使用server/database/steel_system.json作为数据库文件路径
+# 您可以通过DB_PATH环境变量自定义数据库文件路径
+# DB_PATH=path/to/your/database.json
 ```
 
 ### 功能开关
@@ -54,9 +56,9 @@ REACT_APP_GIT_HASH=
 ## 📋 配置说明
 
 ### 1. 数据库配置
-- 需要在Neon PostgreSQL创建数据库
-- 获取连接字符串并填入DATABASE_URL
-- NETLIFY_DATABASE_URL与DATABASE_URL相同
+- 当前版本已迁移到lowdb JSON数据库
+- 系统默认使用server/database/steel_system.json作为数据库文件路径
+- 您可以通过DB_PATH环境变量自定义数据库文件路径
 
 ### 2. 功能开关
 - REACT_APP_DEBUG：生产环境建议设为false
@@ -104,7 +106,9 @@ netlify env:set REACT_APP_API_URL /.netlify/functions
 NODE_ENV=production
 REACT_APP_VERSION=3.0.0
 REACT_APP_API_URL=/.netlify/functions
-DATABASE_URL=your_connection_string
+# 当前版本使用lowdb JSON数据库，不需要配置DATABASE_URL
+# 如需自定义数据库路径，可以设置：
+# DB_PATH=/path/to/steel_system.json
 ...
 ```
 
@@ -115,7 +119,7 @@ netlify env:import netlify-env.txt
 
 ## ⚠️ 注意事项
 
-1. **敏感信息**：DATABASE_URL等敏感信息请务必保密
+1. **敏感信息**：所有环境变量中的敏感信息请务必保密
 2. **前端变量**：只有REACT_APP_开头的变量才能在前端代码中使用
 3. **构建时变量**：NODE_ENV等变量在构建时生效
 4. **运行时变量**：Functions中的变量在运行时生效
@@ -135,4 +139,4 @@ netlify env:import netlify-env.txt
 1. 确保变量名拼写正确
 2. 检查变量值是否有特殊字符需要转义
 3. 确认前端变量是否以REACT_APP_开头
-4. 查看Netlify Functions日志获取详细错误信息 
+4. 查看Netlify Functions日志获取详细错误信息

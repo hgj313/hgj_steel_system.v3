@@ -111,8 +111,8 @@ function main() {
   if (allGood) {
     log('🎉 所有检查通过！系统准备就绪', 'green');
     log('\n📝 接下来的步骤:', 'blue');
-    log('1. 在Neon创建PostgreSQL数据库', 'blue');
-    log('2. 运行: psql DATABASE_URL -f database/init-netlify.sql', 'blue');
+    log('1. 确保数据库文件目录可写', 'blue');
+log('2. 系统会自动创建lowdb JSON数据库文件', 'blue');
     log('3. 在Netlify配置环境变量（参考NETLIFY_ENV_VARS.md）', 'blue');
     log('4. 部署到Netlify', 'blue');
     log('5. 运行性能检查: npm run performance-check YOUR_SITE_URL', 'blue');
@@ -134,4 +134,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { main }; 
+module.exports = { main };
