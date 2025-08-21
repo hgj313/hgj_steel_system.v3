@@ -499,13 +499,34 @@ export const useAsyncOptimization = () => {
 
     setIsPolling(true);
     
+    // 添加轮询计数器和最大重试次数
+    let pollCount = 0;
+    const MAX_POLL_ATTEMPTS = 30; // 最大轮询次数（约60秒）
+    let currentPollInterval = 2000; // 初始轮询间隔（毫秒）
+    const MAX_POLL_INTERVAL = 10000; // 最大轮询间隔（毫秒）
+
     const pollTaskStatus = async () => {
+      pollCount++;
+      
       try {
         const response = await fetch(`/api/task/${taskId}`);
+        
+        // 特别处理404错误（任务不存在）
+        if (response.status === 404) {
+          console.error('❌ 任务不存在或已过期:', taskId);
+          setCurrentTask(prev => ({
+            ...prev,
+            status: 'failed',
+            error: '任务不存在或已过期。这可能是因为任务已完成但记录已清理，或Netlify函数实例隔离导致的数据丢失。\n\n请尝试重新提交优化任务。'
+          }));
+          stopPolling();
+          return;
+        }
+        
         const result = await response.json();
 
         if (result.success) {
-          setCurrentTask(prev => ({
+          setCurrentTask(prev => ({ 
             ...prev,
             status: result.status,
             progress: result.progress || 0,
@@ -520,13 +541,56 @@ export const useAsyncOptimization = () => {
             stopPolling();
             console.log(`📋 任务${result.status}:`, taskId);
           }
+          
+          // 重置轮询间隔（如果成功获取状态）
+          currentPollInterval = 2000;
         } else {
           console.error('❌ 轮询任务状态失败:', result.error);
-          // 继续轮询，可能是临时网络问题
+          
+          // 增加轮询间隔（指数退避）
+          currentPollInterval = Math.min(currentPollInterval * 1.5, MAX_POLL_INTERVAL);
+          
+          // 如果有错误信息，更新到任务状态
+          if (result.error) {
+            setCurrentTask(prev => ({ ...prev, error: result.error }));
+          }
+          
+          // 如果达到最大重试次数，停止轮询
+          if (pollCount >= MAX_POLL_ATTEMPTS) {
+            console.error(`❌ 达到最大轮询次数(${MAX_POLL_ATTEMPTS})，已停止轮询`);
+            setCurrentTask(prev => ({
+              ...prev,
+              status: 'failed',
+              error: '无法获取任务状态。这可能是网络问题或服务器临时不可用。\n\n请尝试重新提交优化任务。'
+            }));
+            stopPolling();
+          }
         }
       } catch (error) {
         console.error('❌ 轮询请求异常:', error);
-        // 继续轮询，可能是临时网络问题
+        
+        // 增加轮询间隔（指数退避）
+        currentPollInterval = Math.min(currentPollInterval * 1.5, MAX_POLL_INTERVAL);
+        
+        const errorMessage = error instanceof Error ? error.message : '网络请求异常';
+        setCurrentTask(prev => ({ ...prev, error: errorMessage }));
+        
+        // 如果达到最大重试次数，停止轮询
+        if (pollCount >= MAX_POLL_ATTEMPTS) {
+          console.error(`❌ 达到最大轮询次数(${MAX_POLL_ATTEMPTS})，已停止轮询`);
+          setCurrentTask(prev => ({
+            ...prev,
+            status: 'failed',
+            error: '网络连接异常，无法继续获取任务状态。\n\n请检查网络连接后重新提交优化任务。'
+          }));
+          stopPolling();
+        }
+      }
+      
+      // 动态调整轮询间隔
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = setInterval(pollTaskStatus, currentPollInterval);
       }
     };
 
@@ -689,4 +753,4 @@ export const useAsyncOptimization = () => {
     hasResults: currentTask.status === 'completed' && !!currentTask.results,
     hasError: currentTask.status === 'failed' && !!currentTask.error
   }), [currentTask, isPolling, submitOptimization, cancelTask, resetTask, getTaskHistory]);
-}; 
+};
