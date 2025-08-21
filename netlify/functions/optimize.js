@@ -28,7 +28,7 @@ exports.handler = async (event, context) => {
     // 确保TaskManager已初始化
     await taskManager.initialize();
 
-    // 创建新任务并添加重试逻辑
+    // 创建新任务并添加重试逻辑 - 增强版
     let taskId;
     let taskCreationAttempts = 3;
     while (taskCreationAttempts > 0) {
@@ -40,11 +40,17 @@ exports.handler = async (event, context) => {
       } catch (error) {
         taskCreationAttempts--;
         console.error(`❌ Task creation failed (attempts left: ${taskCreationAttempts}):`, error);
+        console.error(`❌ Error details:`, error.stack);
         if (taskCreationAttempts === 0) {
-          throw new Error(`Failed to create task after multiple attempts: ${error.message}`);
+          // 创建一个备用任务ID，确保始终返回一个ID给前端
+          const fallbackTaskId = `fallback_${Date.now()}_${Math.floor(Math.random() * 900000) + 100000}`;
+          console.warn(`⚠️ Creating fallback task ID: ${fallbackTaskId} since database creation failed`);
+          
+          // 即使数据库创建失败，也要返回备用ID
+          throw new Error(`任务创建失败: ${error.message}, 备用任务ID: ${fallbackTaskId}`);
         }
-        // 短暂延迟后重试
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // 短暂延迟后重试，时间逐渐增加
+        await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, 3 - taskCreationAttempts)));
       }
     }
     
@@ -127,12 +133,32 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({ success: true, taskId, message: '优化任务已创建' })
     };
   } catch (error) {
-    console.error('❌ 优化API主流程错误:', error);
-    console.error('❌ 错误详情:', error.stack);
-    return {
-      statusCode: 500,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ success: false, error: `服务器内部错误: ${error.message}` })
-    };
-  }
+      console.error('❌ 优化API主流程错误:', error);
+      console.error('❌ 错误详情:', error.stack);
+      
+      // 检查错误消息中是否包含备用任务ID
+      const fallbackTaskMatch = error.message.match(/备用任务ID: (\w+)/);
+      const fallbackTaskId = fallbackTaskMatch ? fallbackTaskMatch[1] : null;
+      
+      // 如果有备用ID，返回500状态但包含任务ID，让前端能够继续操作
+      if (fallbackTaskId) {
+        console.warn(`⚠️ 使用备用任务ID响应请求: ${fallbackTaskId}`);
+        return {
+          statusCode: 500,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          body: JSON.stringify({
+            success: false,
+            error: `任务创建失败，但提供备用ID: ${error.message}`,
+            taskId: fallbackTaskId // 即使失败也提供备用ID
+          })
+        };
+      }
+      
+      // 没有备用ID的情况，返回标准错误响应
+      return {
+        statusCode: 500,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        body: JSON.stringify({ success: false, error: `服务器内部错误: ${error.message}` })
+      };
+    }
 };
