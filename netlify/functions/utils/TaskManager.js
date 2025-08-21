@@ -2,12 +2,14 @@
  * Netlify异步任务管理器 - 与系统核心一致的lowdb版本
  * 最终修复版：提供所有必需方法，职责单一
  */
+const { Low } = require('lowdb');
+const { JSONFile } = require('lowdb/node');
 const fs = require('fs');
 const path = require('path');
 
 class TaskManager {
   constructor() {
-    this.dbPath = process.env.DB_PATH || path.join(__dirname, '..', '..', '..', 'database', 'steel_system.json');
+    this.dbPath = process.env.DB_PATH || path.join(__dirname, '..', '..', '..', 'server', 'database', 'steel_system.json');
     this.db = null;
     this.isInitialized = false;
   }
@@ -16,19 +18,24 @@ class TaskManager {
     if (this.isInitialized) return;
     
     try {
-      // 模拟加载现有数据库文件
-      let dbData = { optimizationTasks: [] };
-      if (fs.existsSync(this.dbPath)) {
-        const fileContent = fs.readFileSync(this.dbPath, 'utf8');
-        dbData = JSON.parse(fileContent);
+      // 确保数据库目录存在
+      const dbDir = path.dirname(this.dbPath);
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
       }
+
+      // 使用lowdb初始化数据库
+      const adapter = new JSONFile(this.dbPath);
+      this.db = new Low(adapter, { optimizationTasks: [] });
+      
+      // 读取数据库
+      await this.db.read();
       
       // 确保optimizationTasks数组存在
-      if (!dbData.optimizationTasks) {
-        dbData.optimizationTasks = [];
+      if (!this.db.data.optimizationTasks) {
+        this.db.data.optimizationTasks = [];
       }
       
-      this.db = dbData;
       this.isInitialized = true;
       console.log('🔧 任务管理器初始化完成 (lowdb)');
     } catch (error) {
@@ -40,7 +47,7 @@ class TaskManager {
   // 保存数据库更改到文件
   async saveDatabase() {
     try {
-      fs.writeFileSync(this.dbPath, JSON.stringify(this.db, null, 2));
+      await this.db.write();
     } catch (error) {
       console.error('❌ 保存数据库失败:', error);
       throw new Error('保存数据库失败');
@@ -69,7 +76,7 @@ class TaskManager {
       updated_at: new Date().toISOString()
     };
     
-    this.db.optimizationTasks.push(newTask);
+    this.db.data.optimizationTasks.push(newTask);
     await this.saveDatabase();
     
     console.log(`✅ 创建待处理任务: ${taskId}`);
@@ -78,7 +85,7 @@ class TaskManager {
 
   async getTask(taskId) {
     await this.initialize();
-    const task = this.db.optimizationTasks.find(t => t.id === taskId);
+    const task = this.db.data.optimizationTasks.find(t => t.id === taskId);
     if (!task) return null;
     
     return {
@@ -98,12 +105,12 @@ class TaskManager {
 
   async updateTaskStatus(taskId, status, updates = {}) {
     await this.initialize();
-    const taskIndex = this.db.optimizationTasks.findIndex(t => t.id === taskId);
+    const taskIndex = this.db.data.optimizationTasks.findIndex(t => t.id === taskId);
     if (taskIndex === -1) {
       throw new Error(`任务 ${taskId} 不存在`);
     }
     
-    const task = this.db.optimizationTasks[taskIndex];
+    const task = this.db.data.optimizationTasks[taskIndex];
     task.status = status;
     task.updated_at = new Date().toISOString();
     
@@ -123,7 +130,7 @@ class TaskManager {
       task.execution_time = updates.executionTime;
     }
     
-    this.db.optimizationTasks[taskIndex] = task;
+    this.db.data.optimizationTasks[taskIndex] = task;
     await this.saveDatabase();
     
     console.log(`📝 更新任务状态: ${taskId} -> ${status}`);
@@ -151,7 +158,7 @@ class TaskManager {
     await this.initialize();
     const { limit = 20, status = null } = options;
     
-    let tasks = [...this.db.optimizationTasks];
+    let tasks = [...this.db.data.optimizationTasks];
     
     // 按创建时间倒序排序
     tasks.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -180,15 +187,15 @@ class TaskManager {
     const now = new Date();
     const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     
-    const initialLength = this.db.optimizationTasks.length;
-    this.db.optimizationTasks = this.db.optimizationTasks.filter(task => {
+    const initialLength = this.db.data.optimizationTasks.length;
+    this.db.data.optimizationTasks = this.db.data.optimizationTasks.filter(task => {
       const taskCreatedAt = new Date(task.created_at);
       const isExpired = taskCreatedAt < twentyFourHoursAgo && 
                        ['completed', 'failed', 'cancelled'].includes(task.status);
       return !isExpired;
     });
     
-    const deletedCount = initialLength - this.db.optimizationTasks.length;
+    const deletedCount = initialLength - this.db.data.optimizationTasks.length;
     if (deletedCount > 0) {
       await this.saveDatabase();
       console.log(`🧹 清理了 ${deletedCount} 个过期任务。`);
