@@ -646,7 +646,9 @@ export const useAsyncOptimization = () => {
       }
     } catch (error) {
       console.error('❌ 提交优化任务异常:', error);
-      console.error('❌ 异常详情:', error.stack);
+      if (error instanceof Error) {
+        console.error('❌ 异常详情:', error.stack);
+      }
       
       // 生成备用任务ID，确保前端始终有一个ID可用于后续操作
       const fallbackTaskId = `frontend_fallback_${Date.now()}_${Math.floor(Math.random() * 900000) + 100000}`;

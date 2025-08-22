@@ -9,33 +9,54 @@ const path = require('path');
 const fsSync = require('fs');
 
 class TaskManager {
-  constructor() {
-    // 针对不同环境使用不同的数据库路径
-    // 在Netlify Functions中，使用/tmp目录（唯一可写的目录）
-    // 本地开发环境使用相对路径
-    const isNetlify = process.env.NETLIFY === 'true' || process.env.URL?.includes('netlify.app');
-    
-    // 改进的路径处理，确保跨平台兼容性
-    let dbPath;
-    if (process.env.DB_PATH) {
-      dbPath = process.env.DB_PATH;
-    } else if (isNetlify) {
-      // 在Netlify环境中使用绝对路径的/tmp目录
-      dbPath = path.posix.join('/tmp', 'steel_system.json');
-    } else {
-      // 在本地环境中使用相对路径
-      dbPath = path.join(__dirname, '..', '..', '..', 'server', 'database', 'steel_system.json');
+    constructor(options = {}) {
+      // 初始化状态变量
+      this.db = null;
+      this.dbPath = null;
+      this.isInitialized = false;
+      this.initPromise = null;
+      this._isNetlify = undefined;
+      
+      // 配置选项默认值
+      this.options = {
+        maxRetries: 3,
+        retryDelay: 100,
+        maxTaskAge: 24 * 60 * 60 * 1000, // 24小时
+        ...options
+      };
+      
+      // 改进的路径处理，确保跨平台兼容性
+      let dbPath;
+      if (process.env.DB_PATH) {
+        dbPath = process.env.DB_PATH;
+      } else if (this.isNetlify) {
+        // 在Netlify环境中使用绝对路径的/tmp目录
+        dbPath = path.posix.join('/tmp', 'steel_system.json');
+      } else {
+        // 在本地环境中使用相对路径
+        dbPath = path.join(__dirname, '..', '..', '..', 'server', 'database', 'steel_system.json');
+      }
+      
+      // 标准化路径格式，处理不同操作系统的差异
+      this.dbPath = path.normalize(dbPath);
+      
+      console.log(`📊 TaskManager初始化配置: 环境=${this.getEnvironment()}, 数据库路径=${this.dbPath}`);
     }
     
-    // 标准化路径格式，处理不同操作系统的差异
-    this.dbPath = path.normalize(dbPath);
-    
-    this.db = null;
-    this.isInitialized = false;
-    this.initPromise = null;
-    
-    console.log(`📊 TaskManager初始化配置: 环境=${isNetlify ? 'Netlify' : 'Local'}, 数据库路径=${this.dbPath}`);
-  }
+    // 环境检测逻辑 - 增强版，更精确地检测运行环境
+    get isNetlify() {
+      if (this._isNetlify === undefined) {
+        this._isNetlify = process.env.NETLIFY === 'true' || 
+                      process.env.URL?.includes('netlify.app') ||
+                      process.env.NETLIFY_IMAGES_CDN_DOMAIN !== undefined;
+      }
+      return this._isNetlify;
+    }
+ 
+    // 获取当前环境名称
+    getEnvironment() {
+      return this.isNetlify ? 'Netlify' : 'Local';
+    }
 
   async initialize() {
     // 防止重复初始化，尤其在异步环境下
@@ -49,8 +70,11 @@ class TaskManager {
       return;
     }
     
-    const isNetlify = process.env.NETLIFY === 'true' || process.env.URL?.includes('netlify.app');
-    console.log(`🔧 开始初始化TaskManager，环境: ${isNetlify ? 'Netlify' : 'Local'}`);
+    // 初始化开始时间，用于性能监控
+    const startTime = Date.now();
+    
+    // 使用类的getter方法获取环境信息
+    console.log(`🔧 开始初始化TaskManager，环境: ${this.getEnvironment()}`);
     console.log(`📁 数据库路径: ${this.dbPath}`);
     
     // 增加初始化超时保护
@@ -58,35 +82,54 @@ class TaskManager {
       (async () => {
       try {
         // 确保数据库目录存在
-        const dbDir = path.dirname(this.dbPath);
+        let dbDir = path.dirname(this.dbPath);
         console.log(`🔍 检查数据库目录: ${dbDir}`);
         
-        try {
-          await fs.access(dbDir);
-          console.log(`✅ 数据库目录已存在: ${dbDir}`);
-        } catch (accessError) {
-          console.log(`📁 数据库目录不存在，创建中: ${dbDir}`);
+        // 添加重试逻辑，处理临时文件系统问题
+        let retries = 0;
+        const maxRetries = this.maxRetries || 3;
+        const baseRetryDelay = this.retryDelay || 100;
+        let mkdirSuccess = false;
+        
+        while (retries < maxRetries && !mkdirSuccess) {
           try {
-            await fs.mkdir(dbDir, { recursive: true });
-            console.log(`✅ 数据库目录创建成功: ${dbDir}`);
-          } catch (mkdirError) {
-            console.error('❌ 创建数据库目录失败:', mkdirError);
-            // 在Netlify环境中，如果创建目录失败，尝试使用备用路径
-            if (isNetlify) {
-              console.log('🔄 在Netlify环境中尝试备用路径...');
-              // 尝试使用process.cwd()作为备用
-              this.dbPath = path.join(process.cwd(), 'steel_system.json');
-              console.log(`📁 切换到备用数据库路径: ${this.dbPath}`);
-              dbDir = path.dirname(this.dbPath);
-              try {
-                await fs.mkdir(dbDir, { recursive: true });
-                console.log(`✅ 备用数据库目录创建成功: ${dbDir}`);
-              } catch (backupMkdirError) {
-                console.error('❌ 备用数据库目录创建也失败:', backupMkdirError);
-                throw new Error(`创建数据库目录失败: ${mkdirError.message}`);
+            await fs.access(dbDir);
+            console.log(`✅ 数据库目录已存在: ${dbDir}`);
+            mkdirSuccess = true;
+          } catch (accessError) {
+            console.log(`📁 数据库目录不存在，创建中: ${dbDir}`);
+            try {
+              await fs.mkdir(dbDir, { recursive: true });
+              console.log(`✅ 数据库目录创建成功: ${dbDir}`);
+              mkdirSuccess = true;
+            } catch (mkdirError) {
+              retries++;
+              if (retries >= maxRetries) {
+                console.error('❌ 创建数据库目录失败:', mkdirError);
+                // 在Netlify环境中，如果创建目录失败，尝试使用备用路径
+                if (this.isNetlify) {
+                  console.log('🔄 在Netlify环境中尝试备用路径...');
+                  // 尝试使用process.cwd()作为备用
+                  this.dbPath = path.join(process.cwd(), 'steel_system.json');
+                  console.log(`📁 切换到备用数据库路径: ${this.dbPath}`);
+                  dbDir = path.dirname(this.dbPath);
+                  try {
+                    await fs.mkdir(dbDir, { recursive: true });
+                    console.log(`✅ 备用数据库目录创建成功: ${dbDir}`);
+                    mkdirSuccess = true;
+                  } catch (backupMkdirError) {
+                    console.error('❌ 备用数据库目录创建也失败:', backupMkdirError);
+                    throw new Error(`创建数据库目录失败: ${mkdirError.message}`);
+                  }
+                } else {
+                  throw new Error(`创建数据库目录失败: ${mkdirError.message}`);
+                }
+              } else {
+                console.warn(`⚠️ 创建数据库目录失败，${maxRetries - retries}次重试中...`, mkdirError);
+                // 等待一段时间后重试，时间逐渐增加
+                const retryDelay = baseRetryDelay * Math.pow(2, retries - 1);
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
               }
-            } else {
-              throw new Error(`创建数据库目录失败: ${mkdirError.message}`);
             }
           }
         }
@@ -95,60 +138,125 @@ class TaskManager {
         console.log(`📚 初始化lowdb数据库...`);
         
         // 检查文件是否存在，如果不存在，创建一个空的JSON文件
-        try {
-          await fs.access(this.dbPath);
-          console.log(`✅ 数据库文件已存在: ${this.dbPath}`);
-        } catch (fileError) {
-          console.log(`📝 数据库文件不存在，创建空文件: ${this.dbPath}`);
+        let fileExists = false;
+        retries = 0;
+        while (retries < maxRetries && !fileExists) {
           try {
-            await fs.writeFile(this.dbPath, '{}', 'utf8');
-            console.log(`✅ 空数据库文件创建成功`);
-          } catch (writeError) {
-            console.error('❌ 创建数据库文件失败:', writeError);
-            throw new Error(`创建数据库文件失败: ${writeError.message}`);
+            await fs.access(this.dbPath);
+            console.log(`✅ 数据库文件已存在: ${this.dbPath}`);
+            fileExists = true;
+          } catch (fileError) {
+            console.log(`📝 数据库文件不存在，创建空文件: ${this.dbPath}`);
+            try {
+              await fs.writeFile(this.dbPath, '{}', 'utf8');
+              console.log(`✅ 空数据库文件创建成功`);
+              fileExists = true;
+            } catch (writeError) {
+              retries++;
+              if (retries >= maxRetries) {
+                console.error('❌ 创建数据库文件失败:', writeError);
+                throw new Error(`创建数据库文件失败: ${writeError.message}`);
+              }
+              console.warn(`⚠️ 创建数据库文件失败，${maxRetries - retries}次重试中...`, writeError);
+              // 等待一段时间后重试，时间逐渐增加
+              const retryDelay = baseRetryDelay * Math.pow(2, retries - 1);
+              await new Promise(resolve => setTimeout(resolve, retryDelay));
+            }
           }
         }
         
         const adapter = new JSONFile(this.dbPath);
         this.db = new Low(adapter, { optimizationTasks: [] });
         
-        // 读取数据库
+        // 读取数据库，添加重试逻辑
         console.log(`📖 读取数据库文件...`);
-        try {
-          await this.db.read();
-          console.log(`✅ 数据库读取成功`);
-        } catch (readError) {
-          console.error('❌ 数据库读取失败，可能是文件格式错误:', readError);
-          // 尝试重置数据库
-        console.log('🔄 尝试重置数据库...');
-        this.db.data = { optimizationTasks: [] };
-        try {
-          await this.db.write();
-          console.log(`✅ 数据库已重置`);
-        } catch (writeError) {
-          console.error('❌ 数据库重置失败:', writeError);
-          throw new Error(`数据库重置失败: ${writeError.message}`);
-        }
+        let dbReadSuccess = false;
+        retries = 0;
+        while (retries < maxRetries && !dbReadSuccess) {
+          try {
+            await this.db.read();
+            console.log(`✅ 数据库读取成功`);
+            dbReadSuccess = true;
+          } catch (readError) {
+            retries++;
+            if (retries >= maxRetries) {
+              console.error('❌ 数据库读取失败，可能是文件格式错误:', readError);
+              // 尝试重置数据库
+              console.log('🔄 尝试重置数据库...');
+              this.db.data = { optimizationTasks: [] };
+              try {
+                await this.db.write();
+                console.log(`✅ 数据库已重置`);
+                dbReadSuccess = true;
+              } catch (writeError) {
+                console.error('❌ 数据库重置失败:', writeError);
+                throw new Error(`数据库重置失败: ${writeError.message}`);
+              }
+            } else {
+              console.warn(`⚠️ 数据库读取失败，${maxRetries - retries}次重试中...`, readError);
+              // 等待一段时间后重试，时间逐渐增加
+              const retryDelay = baseRetryDelay * Math.pow(2, retries - 1);
+              await new Promise(resolve => setTimeout(resolve, retryDelay));
+            }
+          }
         }
         
         // 确保optimizationTasks数组存在
-        if (!this.db.data.optimizationTasks) {
-          console.log(`🚨 optimizationTasks数组不存在，创建中...`);
-          this.db.data.optimizationTasks = [];
+        retries = 0;
+        let optimizationTasksInitialized = false;
+        while (retries < maxRetries && !optimizationTasksInitialized) {
           try {
-            await this.db.write();
-            console.log(`✅ optimizationTasks数组创建成功`);
-          } catch (writeError) {
-            console.error('❌ 创建optimizationTasks数组失败:', writeError);
-            // 即使写入失败，我们仍然继续，因为数组已在内存中创建
-            console.log('⚠️ 继续使用内存中的optimizationTasks数组');
+            // 防御性检查，确保data对象存在且optimizationTasks是数组
+            if (!this.db.data) {
+              console.log(`🚨 数据库data对象不存在，创建中...`);
+              this.db.data = { optimizationTasks: [] };
+            }
+            
+            if (!Array.isArray(this.db.data.optimizationTasks)) {
+              console.log(`🚨 optimizationTasks不是数组，重置中...`);
+              this.db.data.optimizationTasks = [];
+            }
+            
+            // 如果数组不存在或为空，尝试写入数据库保存更改
+            if (!this.db.data.optimizationTasks) {
+              this.db.data.optimizationTasks = [];
+              try {
+                await this.db.write();
+                console.log(`✅ optimizationTasks数组创建成功`);
+              } catch (writeError) {
+                console.error('❌ 创建optimizationTasks数组失败:', writeError);
+                // 即使写入失败，我们仍然继续，因为数组已在内存中创建
+                console.log('⚠️ 继续使用内存中的optimizationTasks数组');
+              }
+            }
+            
+            optimizationTasksInitialized = true;
+          } catch (error) {
+            retries++;
+            if (retries >= maxRetries) {
+              console.error('❌ 初始化optimizationTasks数组失败:', error);
+              // 即使遇到错误，也要创建一个基本数组以继续执行
+              this.db.data = this.db.data || {};
+              this.db.data.optimizationTasks = [];
+              optimizationTasksInitialized = true;
+            } else {
+              console.warn(`⚠️ 初始化optimizationTasks数组失败，${maxRetries - retries}次重试中...`, error);
+              // 等待一段时间后重试，时间逐渐增加
+              const retryDelay = baseRetryDelay * Math.pow(2, retries - 1);
+              await new Promise(resolve => setTimeout(resolve, retryDelay));
+            }
           }
         }
         
         console.log(`📊 数据库初始状态: 任务总数=${this.db.data.optimizationTasks?.length || 0}`);
         
         this.isInitialized = true;
-        console.log('✅ 任务管理器初始化完成 (lowdb)');
+        
+        // 计算并记录初始化耗时
+        const endTime = Date.now();
+        const initDuration = endTime - startTime;
+        console.log(`✅ 任务管理器初始化完成 (lowdb)，耗时: ${initDuration}ms`);
+        
         return true;
       } catch (error) {
         console.error('❌ 任务管理器初始化失败:', error);
@@ -180,7 +288,7 @@ class TaskManager {
       }
     }
     
-    const isNetlify = process.env.NETLIFY === 'true' || process.env.URL?.includes('netlify.app');
+    // 使用类的getter方法获取环境信息
     
     try {
       // 添加重试逻辑，处理临时文件系统问题
@@ -188,7 +296,7 @@ class TaskManager {
       while (retries < maxRetries) {
         try {
           // 在Netlify环境中，为了增加可靠性，先写入临时文件，再重命名
-          if (isNetlify) {
+          if (this.isNetlify) {
             console.log('🌐 在Netlify环境中使用临时文件策略保存数据库');
             
             // 1. 创建临时文件路径
@@ -246,7 +354,7 @@ class TaskManager {
             console.error('❌ 数据库保存最终失败，所有重试均失败:', error);
             
             // 在Netlify环境中，如果保存失败，尝试使用备用路径
-            if (isNetlify) {
+            if (this.isNetlify) {
               try {
                 const backupDbPath = path.join('/tmp', `steel_system_backup_${Date.now()}.json`);
                 console.log(`🔄 尝试使用备用路径保存数据库: ${backupDbPath}`);
@@ -337,8 +445,7 @@ class TaskManager {
       return null;
     }
     
-    const isNetlify = process.env.NETLIFY === 'true' || process.env.URL?.includes('netlify.app');
-    const env = isNetlify ? 'Netlify' : 'Local';
+    const env = this.getEnvironment();
     
     // 环境信息日志
     console.log(`📊 查询环境: ${env}, 数据库路径=${this.dbPath}`);
@@ -347,7 +454,7 @@ class TaskManager {
     const queryStrategies = [
       // 策略1: 在Netlify环境中，每次都重新读取文件以获取最新状态
       async () => {
-        if (!isNetlify) return null; // 只在Netlify环境中使用
+        if (!this.isNetlify) return null; // 只在Netlify环境中使用
         console.log('🌐 策略1: 重新读取数据库文件以获取最新状态');
         try {
           // 创建一个临时的lowdb实例，仅用于读取最新的数据库状态
