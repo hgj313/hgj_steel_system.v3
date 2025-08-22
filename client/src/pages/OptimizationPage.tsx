@@ -163,6 +163,47 @@ const OptimizationPage: React.FC = () => {
       console.error('自动跳转失败:', error);
     }
   }, [taskStatus, currentTaskId, navigate, addNavigatedTaskId]);
+
+  // 额外检查：组件加载时，检查localStorage中是否有已完成但未跳转的任务结果
+  useEffect(() => {
+    try {
+      // 检查是否有任何已完成的任务结果在localStorage中
+      const keys = Object.keys(localStorage);
+      const resultKeys = keys.filter(key => key.startsWith('optimization_result_'));
+      
+      if (resultKeys.length > 0) {
+        console.log('发现本地存储的优化结果:', resultKeys);
+        
+        // 检查这些任务是否已经导航过
+        const navigatedTaskIds = getNavigatedTaskIds();
+        const unnavigatedResultKeys = resultKeys.filter(key => {
+          const taskId = key.replace('optimization_result_', '');
+          return !navigatedTaskIds.includes(taskId);
+        });
+        
+        if (unnavigatedResultKeys.length > 0) {
+          // 取最近的一个未导航的结果
+          const latestResultKey = unnavigatedResultKeys.sort().pop();
+          if (latestResultKey) {
+            const taskId = latestResultKey.replace('optimization_result_', '');
+            
+            // 标记为已导航
+            addNavigatedTaskId(taskId);
+            
+            message.success('发现未查看的优化结果，正在跳转到结果页面...', 1.5);
+            
+            const timer = setTimeout(() => {
+              navigate('/results');
+            }, 1000);
+            
+            return () => clearTimeout(timer);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('检查本地存储的优化结果失败:', error);
+    }
+  }, [navigate, addNavigatedTaskId]);
   
   // 本地UI状态
   const [designCollapsed, setDesignCollapsed] = useState(false);

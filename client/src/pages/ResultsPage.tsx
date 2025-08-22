@@ -106,8 +106,11 @@ const ResultsPage: React.FC = () => {
     );
   }
 
+  // 检查是否有从本地存储恢复的结果
+  const hasRestoredResults = processedResults?.regroupedResults && Object.keys(processedResults.regroupedResults).length > 0;
+
   // 空数据或加载中状态处理
-  if (!results || !results.solutions) {
+  if (!hasRestoredResults && (!results || !results.solutions)) {
     return (
       <div style={{ padding: '24px' }}>
         <Title level={2}>
@@ -145,6 +148,15 @@ const ResultsPage: React.FC = () => {
       </div>
     );
   }
+
+  {/* 显示从本地存储恢复结果的提示 */}
+  const [restoreNoticeShown, setRestoreNoticeShown] = useState(false);
+  useEffect(() => {
+    if (hasRestoredResults && !restoreNoticeShown && !results) {
+      message.success('已从本地存储恢复优化结果', 3);
+      setRestoreNoticeShown(true);
+    }
+  }, [hasRestoredResults, results, restoreNoticeShown]);
 
   // 导出Excel功能
   const handleExportExcel = async () => {
@@ -334,4 +346,4 @@ const ResultsPage: React.FC = () => {
   );
 };
 
-export default ResultsPage; 
+export default ResultsPage;

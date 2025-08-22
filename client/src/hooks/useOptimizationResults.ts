@@ -514,6 +514,29 @@ export const useAsyncOptimization = () => {
         // 特别处理404错误（任务不存在）
         if (response.status === 404) {
           console.error('❌ 任务不存在或已过期:', taskId);
+          
+          // 尝试从localStorage查找可能已完成但未同步的任务结果
+          try {
+            const savedResults = localStorage.getItem(`optimization_result_${taskId}`);
+            if (savedResults) {
+              console.log('🔍 从localStorage找到任务结果备份');
+              const parsedResults = JSON.parse(savedResults);
+              
+              setCurrentTask(prev => ({
+                ...prev,
+                status: 'completed',
+                progress: 100,
+                results: parsedResults,
+                error: null,
+                message: '已从本地存储恢复任务结果'
+              }));
+              stopPolling();
+              return;
+            }
+          } catch (e) {
+            console.error('❌ 解析本地存储的任务结果失败:', e);
+          }
+          
           setCurrentTask(prev => ({
             ...prev,
             status: 'failed',
@@ -526,7 +549,17 @@ export const useAsyncOptimization = () => {
         const result = await response.json();
 
         if (result.success) {
-          setCurrentTask(prev => ({ 
+          // 任务完成时，保存结果到localStorage作为备份
+          if (result.status === 'completed' && result.results) {
+            try {
+              localStorage.setItem(`optimization_result_${taskId}`, JSON.stringify(result.results));
+              console.log('💾 已保存任务结果到本地存储');
+            } catch (e) {
+              console.error('❌ 保存任务结果到本地存储失败:', e);
+            }
+          }
+          
+          setCurrentTask(prev => ({
             ...prev,
             status: result.status,
             progress: result.progress || 0,
@@ -605,6 +638,14 @@ export const useAsyncOptimization = () => {
   const submitOptimization = useCallback(async (optimizationData: any) => {
     try {
       console.log('🚀 提交优化任务...');
+      
+      // 保存优化参数到localStorage，防止页面刷新丢失
+      try {
+        localStorage.setItem('last_optimization_params', JSON.stringify(optimizationData));
+        console.log('💾 已保存优化参数到本地存储');
+      } catch (e) {
+        console.error('❌ 保存优化参数到本地存储失败:', e);
+      }
       
       const response = await fetch('/api/optimize', {
         method: 'POST',
