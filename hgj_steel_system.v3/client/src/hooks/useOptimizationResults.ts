@@ -552,23 +552,24 @@ export const useAsyncOptimization = () => {
 
       const result = await response.json();
 
-      if (result.success && result.taskId) {
-        console.log('✅ 任务创建成功:', result.taskId);
+      if (result.taskId) {
+        // 无论成功与否，只要有任务ID就设置当前任务状态并开始轮询
+        console.log(result.success ? '✅ 任务创建成功:' : '⚠️ 任务创建有异常但获取到ID:', result.taskId);
         
         setCurrentTask({
           taskId: result.taskId,
-          status: 'pending',
+          status: result.success ? 'pending' : 'failed',
           progress: 0,
-          message: result.message || '任务已创建',
+          message: result.message || (result.success ? '任务已创建' : result.error || '任务创建异常'),
           results: null,
-          error: null,
+          error: result.success ? null : (result.error || '任务创建异常'),
           executionTime: 0
         });
 
         // 开始轮询任务状态
         startPolling(result.taskId);
         
-        return { success: true, taskId: result.taskId };
+        return { success: result.success, taskId: result.taskId, error: result.error };
       } else {
         const errorMsg = result.error || '任务创建失败，但未返回任务ID';
         console.error('❌ 任务创建失败:', errorMsg);
@@ -581,13 +582,29 @@ export const useAsyncOptimization = () => {
       }
     } catch (error) {
       console.error('❌ 提交优化任务异常:', error);
-      const errorMessage = error instanceof Error ? error.message : '网络错误';
-      setCurrentTask(prev => ({
-        ...prev,
+      console.error('❌ 异常详情:', error.stack);
+      
+      // 生成备用任务ID，确保前端始终有一个ID可用于后续操作
+      const fallbackTaskId = `frontend_fallback_${Date.now()}_${Math.floor(Math.random() * 900000) + 100000}`;
+      console.warn(`⚠️ 网络请求失败，生成前端备用任务ID: ${fallbackTaskId}`);
+      
+      const errorMessage = error instanceof Error ? `网络请求失败: ${error.message}` : '网络错误';
+      
+      // 设置当前任务状态，使用备用ID
+      setCurrentTask({
+        taskId: fallbackTaskId,
         status: 'failed',
-        error: errorMessage
-      }));
-      return { success: false, error: errorMessage };
+        progress: 0,
+        message: errorMessage,
+        results: null,
+        error: errorMessage,
+        executionTime: 0
+      });
+      
+      // 仍然尝试开始轮询，虽然可能会失败
+      startPolling(fallbackTaskId);
+      
+      return { success: false, error: errorMessage, taskId: fallbackTaskId };
     }
   }, [startPolling]);
 
@@ -689,4 +706,4 @@ export const useAsyncOptimization = () => {
     hasResults: currentTask.status === 'completed' && !!currentTask.results,
     hasError: currentTask.status === 'failed' && !!currentTask.error
   }), [currentTask, isPolling, submitOptimization, cancelTask, resetTask, getTaskHistory]);
-}; 
+};
