@@ -304,7 +304,8 @@ class TaskManager {
             
             // 2. 写入临时文件
             const tempAdapter = new this.db.adapter.constructor(tempDbPath);
-            const tempDb = new Low(tempAdapter);
+            // 添加默认数据，防止lowdb初始化失败
+            const tempDb = new Low(tempAdapter, { optimizationTasks: [] });
             tempDb.data = JSON.parse(JSON.stringify(this.db.data)); // 深拷贝数据
             await tempDb.write();
             
@@ -360,7 +361,8 @@ class TaskManager {
                 console.log(`🔄 尝试使用备用路径保存数据库: ${backupDbPath}`);
                 
                 const backupAdapter = new this.db.adapter.constructor(backupDbPath);
-                const backupDb = new Low(backupAdapter);
+                // 添加默认数据，防止lowdb初始化失败
+                const backupDb = new Low(backupAdapter, { optimizationTasks: [] });
                 backupDb.data = JSON.parse(JSON.stringify(this.db.data)); // 深拷贝数据
                 await backupDb.write();
                 
