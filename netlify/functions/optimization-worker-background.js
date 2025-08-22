@@ -277,7 +277,14 @@ exports.handler = async (event, context) => {
               
               // 更新内存备份
               inMemoryTaskBackup.set(taskId, {
-                ...newTask,
+                id: taskId,
+                status: 'completed',
+                progress: 100,
+                results: results,
+                executionTime: `${(executionTime / 1000).toFixed(2)}s`,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                isRecreated: true,
                 lastBackupTime: Date.now()
               });
             } catch (dbError) {
@@ -372,7 +379,12 @@ exports.handler = async (event, context) => {
               
               // 更新内存备份
               inMemoryTaskBackup.set(taskId, {
-                ...newTask,
+                id: taskId,
+                status: 'failed',
+                error: errorMessage,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                isRecreated: true,
                 lastBackupTime: Date.now()
               });
               
