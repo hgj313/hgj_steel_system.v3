@@ -492,23 +492,35 @@ async function saveTaskStatusToBackupFile(taskId, status, additionalData = {}) {
   try {
     // 确定备份文件路径
     const backupDir = process.env.NETLIFY ? '/tmp/backups' : './backups';
-    const backupFilePath = path.join(backupDir, `task_${taskId}_status.json`);
     
     // 确保备份目录存在
     await fs.mkdir(backupDir, { recursive: true });
+    
+    // 创建时间戳
+    const timestamp = Date.now();
     
     // 构建备份数据
     const backupData = {
       taskId,
       status,
-      timestamp: Date.now(),
+      timestamp: timestamp,
       ...additionalData,
       isBackupFile: true
     };
     
-    // 写入备份文件
+    // 保存带时间戳的版本，便于历史追踪
+    const backupFilePath = path.join(backupDir, `task_${taskId}_status_${timestamp}.json`);
     await fs.writeFile(backupFilePath, JSON.stringify(backupData, null, 2));
     console.log(`[${taskId}] 💾 任务状态已保存到备用文件: ${backupFilePath}`);
+    
+    // 同时保存一个不带时间戳的最新版本，便于快速恢复
+    const latestBackupFilePath = path.join(backupDir, `task_${taskId}_status_latest.json`);
+    try {
+      await fs.writeFile(latestBackupFilePath, JSON.stringify(backupData, null, 2));
+      console.log(`[${taskId}] 💾 任务状态已保存到最新备份文件: ${latestBackupFilePath}`);
+    } catch (latestError) {
+      console.error(`[${taskId}] ❌ 保存最新任务状态备份失败:`, latestError);
+    }
     
     return backupFilePath;
   } catch (error) {
@@ -522,22 +534,54 @@ async function saveTaskResultsToBackupFile(taskId, results) {
   try {
     // 确定备份文件路径
     const backupDir = process.env.NETLIFY ? '/tmp/backups' : './backups';
-    const backupFilePath = path.join(backupDir, `task_${taskId}_results.json`);
     
     // 确保备份目录存在
     await fs.mkdir(backupDir, { recursive: true });
+    
+    // 创建时间戳
+    const timestamp = Date.now();
     
     // 构建备份数据
     const backupData = {
       taskId,
       results,
-      timestamp: Date.now(),
+      timestamp: timestamp,
       isBackupFile: true
     };
     
-    // 写入备份文件
+    // 保存带时间戳的版本，便于历史追踪
+    const backupFilePath = path.join(backupDir, `task_${taskId}_results_${timestamp}.json`);
     await fs.writeFile(backupFilePath, JSON.stringify(backupData, null, 2));
     console.log(`[${taskId}] 💾 任务结果已保存到备用文件: ${backupFilePath}`);
+    
+    // 同时保存一个不带时间戳的最新版本，便于快速恢复
+    const latestBackupFilePath = path.join(backupDir, `task_${taskId}_results_latest.json`);
+    try {
+      await fs.writeFile(latestBackupFilePath, JSON.stringify(backupData, null, 2));
+      console.log(`[${taskId}] 💾 任务结果已保存到最新备份文件: ${latestBackupFilePath}`);
+    } catch (latestError) {
+      console.error(`[${taskId}] ❌ 保存最新任务结果备份失败:`, latestError);
+    }
+    
+    // 为了支持getTask方法，创建一个包含完整任务信息的备份
+    const fullTaskBackupFile = path.join(backupDir, `task_${taskId}_full_latest.json`);
+    const fullBackupData = {
+      id: taskId,
+      type: 'optimization',
+      status: 'completed',
+      progress: 100,
+      message: '任务已完成',
+      results: results,
+      timestamp: timestamp,
+      isBackupFile: true
+    };
+    
+    try {
+      await fs.writeFile(fullTaskBackupFile, JSON.stringify(fullBackupData, null, 2));
+      console.log(`[${taskId}] 💾 完整任务信息已保存到备份文件: ${fullTaskBackupFile}`);
+    } catch (fullError) {
+      console.error(`[${taskId}] ❌ 保存完整任务信息备份失败:`, fullError);
+    }
     
     return backupFilePath;
   } catch (error) {
