@@ -373,15 +373,21 @@ exports.handler = async (event, context) => {
             try {
               // 直接调用setTaskError方法，并设置createIfNotExists为true
               // 这将自动处理任务不存在时的创建逻辑
-              await taskManager.setTaskError(taskId, errorMessage, true); // 设置createIfNotExists为true
+              // 获取原始输入数据，确保在重新创建任务时保留
+              const eventBody = JSON.parse(event.body);
+              const inputData = eventBody?.inputData || null;
+              
+              // 传递inputData参数，确保新创建的任务包含原始输入数据
+              await taskManager.setTaskError(taskId, errorMessage, true, inputData);
               
               console.log(`[${taskId}] ✅ 任务已通过增强的TaskManager API重新创建并设置错误状态`);
               
-              // 更新内存备份
+              // 更新内存备份，包含原始输入数据
               inMemoryTaskBackup.set(taskId, {
                 id: taskId,
                 status: 'failed',
                 error: errorMessage,
+                inputData: inputData,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
                 isRecreated: true,

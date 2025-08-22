@@ -586,12 +586,12 @@ class TaskManager {
         if (createIfNotExists) {
           console.warn(`⚠️ 任务不存在，根据参数创建新任务: ${taskId}`);
           
-          // 创建新任务
+          // 创建新任务，确保包含所有必要的属性
           const newTask = {
             id: taskId,
             type: 'optimization',
             status: status,
-            progress: updates.progress || 0,
+            progress: updates.progress !== undefined ? updates.progress : 0,
             message: updates.message || '任务已创建',
             inputData: updates.inputData || null,
             results: updates.results || null,
@@ -599,7 +599,11 @@ class TaskManager {
             executionTime: updates.executionTime || null,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            isRecreated: true
+            isRecreated: true,
+            // 确保所有可能的任务属性都有默认值
+            metadata: updates.metadata || {},
+            startedAt: updates.startedAt || null,
+            completedAt: updates.completedAt || null
           };
           
           this.db.data.optimizationTasks.push(newTask);
@@ -691,11 +695,25 @@ class TaskManager {
     }
   }
 
-  async setTaskError(taskId, error, createIfNotExists = false) {
+  async setTaskError(taskId, error, createIfNotExists = false, inputData = null) {
     try {
-      console.log(`❌ 准备标记任务为失败: ${taskId}`);
+      console.log(`❌ 准备标记任务为失败: ${taskId}${createIfNotExists ? ' (允许创建不存在的任务)' : ''}`);
       
-      await this.updateTaskStatus(taskId, 'failed', { error }, createIfNotExists);
+      // 准备更新数据，包含错误信息和可能的输入数据
+      const updates = {
+        error: error,
+        progress: 0,
+        message: `任务执行失败: ${error.split('.')[0] || '未知错误'}`
+      };
+      
+      // 如果提供了输入数据，也将其包含在更新中
+      if (inputData) {
+        updates.inputData = inputData;
+        console.log(`📥 包含原始输入数据以确保任务完整性`);
+      }
+      
+      // 调用updateTaskStatus更新状态，可能会创建新任务
+      await this.updateTaskStatus(taskId, 'failed', updates, createIfNotExists);
       
       console.log(`✅ 任务已标记为失败: ${taskId}`);
     } catch (updateError) {
